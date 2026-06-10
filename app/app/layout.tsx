@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import { Inter, DM_Sans, Mukta } from 'next/font/google'
 import './globals.css'
-import VersionSwitcher from './components/VersionSwitcher'
+import VersionSwitcher from '@/components/VersionSwitcher'
 
 const inter = Inter({ variable: '--font-inter', subsets: ['latin'], display: 'swap' })
 const dmSans = DM_Sans({ variable: '--font-dm-sans', subsets: ['latin'], display: 'swap' })

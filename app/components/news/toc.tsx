@@ -334,14 +334,18 @@ const SUGGESTED: SectionType[] = [
 
 export type PickerAnchor = { top: number; left: number; width?: number }
 
+export type TemplateId = 'image-and-text' | 'text-and-image' | 'two-column' | 'three-column'
+
 export function SectionPicker({
   anchor,
   onPick,
+  onPickTemplate,
   onClose,
   initialQuery = '',
 }: {
   anchor: PickerAnchor
   onPick: (type: SectionType) => void
+  onPickTemplate?: (id: TemplateId) => void
   onClose: () => void
   initialQuery?: string
 }) {

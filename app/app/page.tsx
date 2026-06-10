@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Sidebar } from './components/Sidebar'
+import { Sidebar } from '@/components/Sidebar'
 
 const STATS = [
   { label: "Today's Published", value: '18', change: '+12%', up: true, color: '#3B82F6' },

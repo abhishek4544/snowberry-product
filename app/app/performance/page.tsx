@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
-import { Sidebar } from '../components/Sidebar'
+import { Sidebar } from '@/components/Sidebar'
 
 // ── Data ──────────────────────────────────────────────────────────────────────
 const RANGES = ['7 days', '30 days', '90 days'] as const
