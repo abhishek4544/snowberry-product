@@ -1,5 +1,7 @@
 @import "tailwindcss";
 @source "../library/**/*.{ts,tsx}";
+@source "../components/**/*.{ts,tsx}";
+@source "./**/*.{ts,tsx}";
 
 /* ─── Design Tokens ──────────────────────────────────────────────────────────
    Source: Documents/DESIGN_SYSTEM.md

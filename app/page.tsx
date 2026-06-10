@@ -86,7 +86,7 @@ export default function Dashboard() {
           {/* Greeting */}
           <div className="mb-6">
             <h1 className="text-[20px] font-semibold text-[#171717]" style={{ fontFamily: 'var(--font-dm-sans)' }}>Good morning, Ashish</h1>
-            <p className="text-[13px] text-[#737373] mt-0.5">Thursday, May 14 — here's what's happening across the newsroom.</p>
+            <p className="text-[13px] text-[#737373] mt-0.5">Thursday, May 14 — here&apos;s what&apos;s happening across the newsroom.</p>
           </div>
 
           {/* Stats */}
@@ -107,7 +107,7 @@ export default function Dashboard() {
           <div className="bg-white rounded-[12px] border border-[#F5F5F5] p-5 mb-6 shadow-[0px_1px_3px_rgba(0,0,0,0.04)]">
             <div className="mb-4">
               <h2 className="text-[15px] font-semibold text-[#171717]" style={{ fontFamily: 'var(--font-dm-sans)' }}>Studio</h2>
-              <p className="text-[12px] text-[#737373]">Create something — we'll set up the structure for you.</p>
+              <p className="text-[12px] text-[#737373]">Create something — we&apos;ll set up the structure for you.</p>
             </div>
             <div className="grid grid-cols-5 gap-3">
               {STUDIO.map(s => (

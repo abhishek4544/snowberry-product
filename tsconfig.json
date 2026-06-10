@@ -20,7 +20,7 @@
     ],
     "paths": {
       "@/*":   ["./*"],
-      "@ui/*": ["../library/components/*"]
+      "@ui/*": ["./library/components/*"]
     }
   },
   "include": [
@@ -30,8 +30,8 @@
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts",
     "**/*.mts",
-    "../library/**/*.ts",
-    "../library/**/*.tsx"
+    "./library/**/*.ts",
+    "./library/**/*.tsx"
   ],
   "exclude": ["node_modules"]
 }
