@@ -2,11 +2,12 @@
 
 import * as React from 'react'
 import type { ButtonProps, ButtonColor, ButtonSize } from './Button.types'
+import { Kbd } from '../Kbd'
 
 // ─── Size tokens ── derived from Figma frame measurements ─────────────────────
-// text: px / py for label buttons
-// square: fixed w×h for icon-only (xs=32px, sm=36px, base=40px, l=44px)
-// icon: inner icon size (16px for all sizes — confirmed Figma)
+// text:   px/py for label buttons
+// square: fixed w×h for icon-only  xs=32 sm=36 base=40 l=44
+// icon:   inner icon box (16px across all sizes — confirmed Figma)
 const SIZE: Record<ButtonSize, { text: string; square: string; gap: string; icon: string }> = {
   xs:   { text: 'px-3 py-1.5',      square: 'w-8 h-8',   gap: 'gap-1.5', icon: 'w-4 h-4' },
   sm:   { text: 'px-3.5 py-2',      square: 'w-9 h-9',   gap: 'gap-1.5', icon: 'w-4 h-4' },
@@ -14,17 +15,7 @@ const SIZE: Record<ButtonSize, { text: string; square: string; gap: string; icon
   l:    { text: 'px-[18px] py-3.5', square: 'w-11 h-11', gap: 'gap-1.5', icon: 'w-4 h-4' },
 }
 
-// ─── Color tokens ── all values extracted directly from Figma ─────────────────
-//
-// Brand     bg: brand/500 #0787FF  | inner glow: rgba(255,255,255,0.64)
-// Secondary bg: slate/50  #F8FAFC  | border: slate/200 | inner shadow
-// Tertiary  bg: white              | border: slate/200 | drop-shadow
-// AI        bg: gradient brand/400→brand/300 245° | border: brand/200
-// Dark      bg: slate/900 #0F172A  | drop-shadow
-// Ghost     bg: transparent        | no border, no shadow
-// Danger    bg: transparent        | border: red/700  | box-shadow
-// Link Danger bg: transparent      | no border | drop-shadow
-//
+// ─── Color tokens ─────────────────────────────────────────────────────────────
 type ColorConfig = {
   base: string
   hover: string
@@ -35,51 +26,51 @@ type ColorConfig = {
 
 const COLOR: Record<ButtonColor, ColorConfig> = {
   brand: {
-    base:     'bg-[#0787FF] text-white shadow-[inset_0px_0px_4px_rgba(255,255,255,0.64)]',
-    hover:    'hover:bg-[#0061FF]',
-    focus:    'focus-visible:ring-2 focus-visible:ring-[#AEDFFF] focus-visible:ring-offset-1',
-    disabled: 'disabled:bg-[#A3A3A3] disabled:shadow-none',
+    base:     'bg-brand-500 text-white shadow-button',
+    hover:    'hover:bg-brand-600',
+    focus:    'focus-visible:ring-2 focus-visible:ring-brand-200 focus-visible:ring-offset-1',
+    disabled: 'disabled:bg-neutral-400 disabled:shadow-none',
   },
   secondary: {
-    base:     'bg-[#F8FAFC] text-[#1E293B] border border-[#E2E8F0] shadow-[inset_0px_0px_12px_rgba(29,41,61,0.04)]',
-    hover:    'hover:bg-[#F1F5F9]',
-    focus:    'focus-visible:ring-2 focus-visible:ring-[#CBD5E1] focus-visible:ring-offset-1',
+    base:     'bg-slate-50 text-slate-800 border border-slate-200 shadow-tertiary',
+    hover:    'hover:bg-slate-100',
+    focus:    'focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-1',
     disabled: 'disabled:opacity-50',
   },
   tertiary: {
-    base:     'bg-white text-[#1E293B] border border-[#E2E8F0] drop-shadow-[0px_1px_0.25px_rgba(29,41,61,0.02)]',
-    hover:    'hover:bg-[#F8FAFC]',
-    focus:    'focus-visible:ring-2 focus-visible:ring-[#E2E8F0] focus-visible:ring-offset-1',
+    base:     'bg-white text-slate-800 border border-slate-200 shadow-xs',
+    hover:    'hover:bg-slate-50',
+    focus:    'focus-visible:ring-2 focus-visible:ring-slate-200 focus-visible:ring-offset-1',
     disabled: 'disabled:opacity-50',
   },
   ai: {
-    base:     'text-[#F8FAFC] border border-[#AEDFFF] drop-shadow-[0px_1px_0.25px_rgba(29,41,61,0.02)]',
+    base:     'text-slate-50 border border-brand-200 shadow-xs',
     hover:    'hover:brightness-105',
-    focus:    'focus-visible:ring-2 focus-visible:ring-[#76CDFF] focus-visible:ring-offset-1',
+    focus:    'focus-visible:ring-2 focus-visible:ring-brand-300 focus-visible:ring-offset-1',
     disabled: 'disabled:opacity-50',
-    // 245.27° gradient from Figma — cannot be expressed in Tailwind utility classes
+    // 245.27° gradient — can't be expressed as a Tailwind utility
     style:    { background: 'linear-gradient(245deg, #35B0FF 28%, #76CDFF 93%)' },
   },
   dark: {
-    base:     'bg-[#0F172A] text-white drop-shadow-[0px_1px_0.25px_rgba(29,41,61,0.02)]',
-    hover:    'hover:bg-[#1E293B]',
-    focus:    'focus-visible:ring-2 focus-visible:ring-[#334155] focus-visible:ring-offset-1',
+    base:     'bg-slate-900 text-white shadow-xs',
+    hover:    'hover:bg-slate-800',
+    focus:    'focus-visible:ring-2 focus-visible:ring-slate-700 focus-visible:ring-offset-1',
     disabled: 'disabled:opacity-50',
   },
   ghost: {
-    base:     'bg-transparent text-[#1E293B]',
-    hover:    'hover:bg-[#F8FAFC]',
-    focus:    'focus-visible:ring-2 focus-visible:ring-[#E2E8F0] focus-visible:ring-offset-1',
+    base:     'bg-transparent text-slate-800',
+    hover:    'hover:bg-slate-50',
+    focus:    'focus-visible:ring-2 focus-visible:ring-slate-200 focus-visible:ring-offset-1',
     disabled: 'disabled:opacity-50',
   },
   danger: {
-    base:     'bg-transparent text-[#B91C1C] border border-[#B91C1C] shadow-[0px_1px_0.5px_rgba(29,41,61,0.02)]',
+    base:     'bg-transparent text-[#B91C1C] border border-[#B91C1C] shadow-xs',
     hover:    'hover:bg-[#FEF2F2]',
     focus:    'focus-visible:ring-2 focus-visible:ring-[#FCA5A5] focus-visible:ring-offset-1',
     disabled: 'disabled:opacity-50',
   },
   'link-danger': {
-    base:     'bg-transparent text-[#B91C1C] drop-shadow-[0px_1px_0.25px_rgba(29,41,61,0.02)]',
+    base:     'bg-transparent text-[#B91C1C]',
     hover:    'hover:bg-[#FEF2F2]',
     focus:    'focus-visible:ring-2 focus-visible:ring-[#FCA5A5] focus-visible:ring-offset-1',
     disabled: 'disabled:opacity-50',
@@ -104,13 +95,14 @@ function Spinner({ className }: { className?: string }) {
 
 // ─── Button ───────────────────────────────────────────────────────────────────
 export function Button({
-  color = 'brand',
-  size = 'base',
+  type     = 'button',
+  color    = 'brand',
+  size     = 'base',
   iconOnly = false,
   leftIcon,
   rightIcon,
   kbd,
-  loading = false,
+  loading  = false,
   children,
   className,
   disabled,
@@ -121,22 +113,16 @@ export function Button({
   const c = COLOR[color]
 
   const classes = [
-    // layout
     'relative inline-flex items-center justify-center',
-    'rounded-[12px]',
-    // typography — confirmed Figma: Inter Medium 14px, lh 1.25, tracking -0.14px
-    "font-['Inter'] font-medium text-[14px] leading-[1.25] tracking-[-0.014em]",
+    'rounded-base',
+    // Figma: Inter Medium 14px / lh 1.25 / tracking -0.14px
+    'font-sans font-medium text-sm leading-[1.25] tracking-[-0.14px]',
     'select-none whitespace-nowrap',
-    // transitions
     'transition-colors duration-150',
-    // focus reset
     'focus-visible:outline-none',
-    // cursor
     'disabled:cursor-not-allowed',
-    // size
     s.gap,
     iconOnly ? s.square : s.text,
-    // color
     c.base,
     c.hover,
     c.focus,
@@ -148,13 +134,14 @@ export function Button({
 
   return (
     <button
+      type={type}
       className={classes}
       style={{ ...c.style, ...style }}
       disabled={disabled || loading}
       aria-busy={loading || undefined}
       {...props}
     >
-      {/* Left icon / spinner */}
+      {/* Leading: spinner when loading, left icon otherwise */}
       {loading ? (
         <Spinner className={s.icon} />
       ) : (
@@ -175,18 +162,16 @@ export function Button({
         </span>
       )}
 
-      {/* Right icon */}
+      {/* Trailing icon */}
       {!iconOnly && !loading && rightIcon && (
         <span className={`shrink-0 flex items-center justify-center ${s.icon}`} aria-hidden>
           {rightIcon}
         </span>
       )}
 
-      {/* KBD badge — Figma: bg alpha/light/50, rounded-[4px], 12px Inter Regular */}
-      {!iconOnly && kbd && (
-        <span className="inline-flex items-center gap-1 bg-[rgba(26,26,26,0.06)] px-1 py-0.5 rounded-[4px] text-[12px] font-['Inter'] font-normal text-[#1E293B] leading-none shrink-0">
-          {kbd}
-        </span>
+      {/* KBD badge — hidden while loading */}
+      {!iconOnly && !loading && kbd && (
+        <Kbd>{kbd}</Kbd>
       )}
     </button>
   )

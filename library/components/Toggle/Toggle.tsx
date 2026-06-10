@@ -44,10 +44,8 @@ export function Toggle({
     onChange?.(next)
   }
 
-  // Track bg — checked: #1447e6 (brand/700), unchecked: #f3f4f6 (neutral/100)
-  const trackBg = isChecked ? 'bg-[#1447e6]' : 'bg-[#f3f4f6]'
-  // Thumb bg — disabled: #f9fafb (neutral/50), else white
-  const thumbBg = disabled ? 'bg-[#f9fafb]' : 'bg-white'
+  const trackBg = isChecked ? 'bg-brand-700' : 'bg-neutral-100'
+  const thumbBg = disabled ? 'bg-neutral-50' : 'bg-white'
 
   return (
     <button
@@ -68,8 +66,7 @@ export function Toggle({
           TRACK[size],
           trackBg,
           'relative rounded-full transition-colors duration-200',
-          // Focus ring from Figma: 0px 0px 0px 2px #bedbff
-          'group-focus-visible:shadow-[0px_0px_0px_2px_#bedbff]',
+            'group-focus-visible:shadow-focus-toggle',
         ].join(' ')}
       >
         {/* Thumb */}
@@ -85,7 +82,7 @@ export function Toggle({
       </span>
 
       {label && (
-        <span className="font-['Inter'] text-sm leading-[1.5] text-[#101828]">
+        <span className="font-sans text-sm leading-[1.5] text-slate-900">
           {label}
         </span>
       )}

@@ -54,21 +54,16 @@ export function Checkbox({
     onChange?.(next)
   }
 
-  // ── Visual state ──────────────────────────────────────────────────────────────
-  // Unchecked:     gradient bg from #f2f2f4→white, subtle border rgba(0,0,0,0.09)
-  // Checked:       #0787ff fill + border
-  // Indeterminate: #0787ff fill + border + minus icon
-  // Disabled:      muted grays, same icon tinting
   let boxClasses: string
   const showCheck = !indeterminate && isChecked
   const showMinus = indeterminate
 
   if (disabled) {
     boxClasses = (isChecked || indeterminate)
-      ? 'bg-[#e9eaeb] border border-[#e9eaeb]'
-      : 'bg-[#f5f5f5] border border-[#e9eaeb]'
+      ? 'bg-neutral-200 border border-neutral-200'
+      : 'bg-neutral-100 border border-neutral-200'
   } else if (isChecked || indeterminate) {
-    boxClasses = 'bg-[#0787ff] border border-[#0787ff]'
+    boxClasses = 'bg-brand-500 border border-brand-500'
   } else {
     // Unchecked default — matches Figma: gradient + border + inner glow
     boxClasses = [
@@ -100,12 +95,11 @@ export function Checkbox({
           aria-hidden
           className={[
             SIZE[size],
-            'rounded-[6px]',
+            'rounded-input',
             'flex items-center justify-center shrink-0 overflow-hidden',
             'transition-colors duration-150',
             boxClasses,
-            // Focus ring — from Figma: 4px brand-tinted glow
-            'peer-focus-visible:shadow-[0px_0px_0px_4px_rgba(209,236,255,0.48)]',
+            'peer-focus-visible:shadow-focus',
           ].join(' ')}
         >
           {showCheck && <Checkmark />}
@@ -114,7 +108,7 @@ export function Checkbox({
       </span>
 
       {label && (
-        <span className={["font-['Inter'] text-sm leading-[1.5] text-[#101828]", disabled && 'text-[#9da4ae]'].filter(Boolean).join(' ')}>
+        <span className={['font-sans text-sm leading-[1.5] text-slate-900', disabled && 'text-[#9da4ae]'].filter(Boolean).join(' ')}>
           {label}
         </span>
       )}

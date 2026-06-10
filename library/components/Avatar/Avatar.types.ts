@@ -41,3 +41,24 @@ export interface AvatarGroupLabelProps extends React.HTMLAttributes<HTMLDivEleme
   /** Size variant. Defaults to 'base'. */
   size?: AvatarGroupLabelSize
 }
+
+// ─── Avatar Dot ───────────────────────────────────────────────────────────────
+
+export type AvatarDotSize   = 'xs' | 'sm' | 'base' | 'lg' | 'xl'
+export type AvatarDotStatus = 'online' | 'offline' | 'alternative'
+
+export interface AvatarDotProps extends React.HTMLAttributes<HTMLSpanElement> {
+  /** Online = green, Offline = gray, Alternative = brand blue. Defaults to 'online'. */
+  status?: AvatarDotStatus
+  /** Matches the companion avatar's size. Defaults to 'base'. */
+  size?: AvatarDotSize
+}
+
+// ─── Avatar Remove Button ─────────────────────────────────────────────────────
+
+export type AvatarRemoveSize = 'xs' | 'sm' | 'base' | 'lg'
+
+export interface AvatarRemoveButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+  /** Matches the companion avatar's size — xs=18px sm=24px base=32px lg=44px. Defaults to 'base'. */
+  size?: AvatarRemoveSize
+}

@@ -1,8 +1,8 @@
 # Snowberry Design System
 
-**Figma File:** https://www.figma.com/design/65cijwcIaXfRuKxnUKwJlE/Snowberry-Web-app
-**Components Page:** https://www.figma.com/design/65cijwcIaXfRuKxnUKwJlE/Snowberry-Web-app?node-id=2556-6455
-**Token Source:** Tailwind CSS design system (exported via Figma Variables)
+**Figma File:** https://www.figma.com/design/I02tmA6iTr4Z9nKGNi4hki/Snowberry-Web-app
+**Components Page:** https://www.figma.com/design/I02tmA6iTr4Z9nKGNi4hki/Snowberry-Web-app?node-id=2556-6455
+**Token Source:** Figma Variables (extracted live via MCP — `get_variable_defs`)
 
 ---
 
@@ -92,23 +92,65 @@ Used for overlays, scrim, and opacity-based surfaces. Two modes: `light` (dark b
 
 ---
 
-## 2. Typography Scale
+## 2. Typography
 
-Snowberry uses a Tailwind-based type scale. Font family: **Inter** (primary UI font).
+### Font Families
 
-| Scale  | Size  | Line Height | Weight          | Usage                    |
-|--------|-------|-------------|-----------------|--------------------------|
-| xs     | 12px  | 16px        | 400             | Labels, captions         |
-| sm     | 14px  | 20px        | 400 / 500       | Body small, helper text  |
-| base   | 16px  | 24px        | 400 / 500       | Body default             |
-| lg     | 18px  | 28px        | 500 / 600       | Subheadings              |
-| xl     | 20px  | 28px        | 500 / 600       | Section titles           |
-| 2xl    | 24px  | 32px        | 600 / 700       | Card headings            |
-| 3xl    | 30px  | 36px        | 700             | Page titles              |
-| 4xl    | 36px  | 40px        | 700 / 800       | Hero headings            |
-| 5xl    | 48px  | 52px        | 800             | Display text             |
+Snowberry uses **two** font families, each with a distinct role:
 
-**Font weights in use:** 400 (Regular), 500 (Medium), 600 (SemiBold), 700 (Bold), 800 (ExtraBold)
+| Family   | Variable             | Role                                             |
+|----------|----------------------|--------------------------------------------------|
+| **Inter**    | `--font-inter`   | All UI body text, labels, buttons, inputs        |
+| **DM Sans**  | `--font-dm-sans` | Headings, titles, display, hero text             |
+
+> Rule: If it's a label, body, helper, or button — use Inter. If it's a headline, card title, or article title — use DM Sans.
+
+---
+
+### Figma Typography Tokens
+
+These are the **exact named styles** defined in the Figma variables (`get_variable_defs`). Use these token names when documenting components.
+
+| Token                   | Family  | Weight    | Size | Line Height | Letter Spacing | Usage                          |
+|-------------------------|---------|-----------|------|-------------|----------------|-------------------------------|
+| `text-xs/font-normal`   | Inter   | Regular (400) | 12px | 1.5 (18px) | 0              | Captions, metadata, hints     |
+| `text-xs/font-medium`   | Inter   | Medium (500)  | 12px | 1.5 (18px) | 0              | Small labels, badge text      |
+| `text-sm/font-normal`   | Inter   | Regular (400) | 14px | 1.5 (21px) | −0.14px        | Body small, helper text       |
+| `text-sm/font-medium`   | Inter   | Medium (500)  | 14px | 1.25 (17.5px) | −0.14px     | Compact labels, sidebar items |
+| `text-sm/font-semibold` | Inter   | SemiBold (600)| 14px | 1.5 (21px) | 0              | Emphasized body, section heads|
+| `text-base/font-semibold`| DM Sans| SemiBold (600)| 16px | 1.5 (24px) | 0              | Card titles, panel headers    |
+| `text-lg/font-medium`   | Inter   | Medium (500)  | 18px | 1.4 (25.2px) | 0             | Page titles, modal headings   |
+| `text-2xl/font-normal`  | DM Sans | Regular (400) | 24px | 1.5 (36px) | 0              | Article title input, display  |
+
+> **Letter spacing −0.14px** appears on all Inter 14px styles — always apply `tracking-[-0.14px]` in Tailwind for `text-sm`.
+
+---
+
+### Base Typography Variables
+
+Raw primitive tokens also exposed in Figma variables:
+
+| Token                              | Value   |
+|------------------------------------|---------|
+| `typography/font-family/font-base` | Inter   |
+| `typography/font-size/text-xs`     | 12px    |
+| `typography/font-size/text-sm`     | 14px    |
+| `typography/font-weight/font-medium` | 500 (Medium) |
+| `typography/line-height/leading-5` | 20px    |
+
+---
+
+### Tailwind Font Size Scale (reference)
+
+| Scale  | Size  | Line Height | Inter Weight | DM Sans Weight | Usage                    |
+|--------|-------|-------------|--------------|----------------|--------------------------|
+| xs     | 12px  | 18px (1.5)  | 400 / 500    | —              | Labels, captions         |
+| sm     | 14px  | 21px (1.5)  | 400 / 500 / 600 | —           | Body small, helper text  |
+| base   | 16px  | 24px (1.5)  | —            | 600 (SemiBold) | Card/panel headings      |
+| lg     | 18px  | 25px (1.4)  | 500          | —              | Page titles, modal heads |
+| 2xl    | 24px  | 36px (1.5)  | —            | 400 (Regular)  | Article title field      |
+
+**Font weights in use:** 400 (Regular), 500 (Medium), 600 (SemiBold)
 
 ---
 
@@ -129,6 +171,34 @@ T-shirt scale exported from Figma variables (`Size.zip`). All values in `px`.
 | 3xl    | 32    | `space-8`           |
 | 4xl    | 40    | `space-10`          |
 | 5xl    | 48    | `space-12`          |
+
+---
+
+## 3b. Border Radius
+
+| Token                            | Value | Tailwind           | Usage                              |
+|----------------------------------|-------|--------------------|------------------------------------|
+| `border/border-radius/rounded-base` | 12px | `rounded-[12px]` | Buttons, cards, inputs, modals     |
+| `border/border-width/border`     | 1px   | `border`           | Standard 1px border on all UI      |
+| Radius SM (checkbox/input)       | 6px   | `rounded-[6px]`    | Checkboxes, small inputs           |
+| Radius full (avatar/radio)       | 9999px| `rounded-full`     | Avatars, radio buttons, pills      |
+
+---
+
+## 3c. Shadow & Effect Tokens
+
+Extracted from Figma variables — use these exact shadow values in Tailwind arbitrary syntax.
+
+| Token            | Value                                                                         | Usage                         |
+|------------------|-------------------------------------------------------------------------------|-------------------------------|
+| `shadow-xs`      | `0px 1px 0.5px rgba(29,41,61,0.02)`                                          | Buttons, inputs (subtle lift) |
+| `Light/shadow-sm`| `0px 0px 12px rgba(0,0,0,0.08), 0px 1px 4px rgba(0,0,0,0.12)`               | Dropdowns, tooltips           |
+| `Light/shadow-lg`| `0px 0px 1px rgba(0,0,0,0.18), 0px 8px 24px rgba(0,0,0,0.16)`               | Modals, popovers              |
+| Panel shadow     | `0px 0px 8px rgba(31,38,54,0.04)`                                            | Sidebar panels, editor panels |
+| Button inset     | `inset 0px 0px 4px rgba(255,255,255,0.64)`                                   | Brand/AI/primary buttons      |
+| Tertiary inset   | `inset 0px 0px 12px rgba(29,41,61,0.04)`                                     | Ghost/outline buttons         |
+| Focus ring (brand)| `0px 0px 0px 4px rgba(209,236,255,0.48)`                                    | Input/checkbox/radio focus    |
+| Focus ring (toggle)| `0px 0px 0px 2px #bedbff`                                                  | Toggle switch focus           |
 
 ---
 
@@ -442,9 +512,10 @@ Based on component design, Snowberry handles these primary data objects:
 
 ## Source Files
 
-| Asset             | Location                                                  |
-|-------------------|-----------------------------------------------------------|
-| Figma file        | https://www.figma.com/design/65cijwcIaXfRuKxnUKwJlE/     |
-| Components page   | node-id `2556:6455`                                       |
-| Size tokens       | `/Downloads/Size_extracted/Default.tokens.json`           |
-| Color tokens      | `/Downloads/Tailwind_extracted/Default.tokens.json`       |
+| Asset               | Location                                                            |
+|---------------------|---------------------------------------------------------------------|
+| Figma file (active) | https://www.figma.com/design/I02tmA6iTr4Z9nKGNi4hki/Snowberry-Web-app |
+| Components page     | node-id `2556:6455`                                                 |
+| Typography tokens   | Extracted via `get_variable_defs` on node `40000003:34453`          |
+| Size tokens         | `/Downloads/Size_extracted/Default.tokens.json`                     |
+| Color tokens        | `/Downloads/Tailwind_extracted/Default.tokens.json`                 |
