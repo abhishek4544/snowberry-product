@@ -3,6 +3,7 @@
 import React, { useState, useRef, useCallback, useEffect, useLayoutEffect } from 'react'
 import {
   LeftViewToggle, TableOfContents, SectionPicker, BlockEditor, EmptyBlockPlaceholder,
+  useFlipPosition,
   type Section, type SectionType, type LeftPanelView, type PickerAnchor, type TemplateId,
 } from './toc'
 
@@ -296,9 +297,9 @@ function AddSourcePanel({
   onSelectSection,
   onReorderSections,
   onRequestAddSection,
-  archived: _archived,
-  onArchiveSection: _onArchiveSection,
-  onRestoreSection: _onRestoreSection,
+  archived = [],
+  onArchiveSection,
+  onRestoreSection,
 }: {
   onOpenModal: () => void
   sources: SourceFile[]
@@ -331,10 +332,13 @@ function AddSourcePanel({
         <div className="flex flex-col flex-1 overflow-hidden min-h-0">
           <TableOfContents
             sections={sections}
+            archived={archived}
             activeId={activeSectionId}
             onSelect={onSelectSection}
             onReorder={onReorderSections}
             onAddRequest={onRequestAddSection}
+            onArchive={onArchiveSection}
+            onRestore={onRestoreSection}
           />
         </div>
       ) : (
@@ -555,6 +559,22 @@ function ToolbarBtn({
   )
 }
 
+function FloatingSelectionToolbar({
+  anchor, phase, onBerryWrite,
+}: {
+  anchor: { top: number; left: number; triggerTop?: number }
+  phase: AiPhase
+  onBerryWrite: () => void
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+  const pos = useFlipPosition(anchor, ref)
+  return (
+    <div ref={ref} className="fixed z-50 berry-toolbar-in" style={{ top: pos.top, left: pos.left }}>
+      <FloatingBerryToolbar onBerryWrite={onBerryWrite} berryPhase={phase} />
+    </div>
+  )
+}
+
 function FloatingBerryToolbar({
   onBerryWrite, berryPhase,
 }: { onBerryWrite: () => void; berryPhase: AiPhase }) {
@@ -662,158 +682,11 @@ function FloatingBerryToolbar({
   )
 }
 
-// ── Slash command menu (Notion / ClickUp style) ───────────────────────────────
-type SlashCommand = {
-  id: string
-  label: string
-  hint: string
-  icon: React.ReactNode
-  keywords: string[]
-}
-
-const SLASH_COMMANDS: SlashCommand[] = [
-  {
-    id: 'berry-write',
-    label: 'Berry write',
-    hint: 'Draft content from your sources',
-    icon: (
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-        <path d="M8 1.5l1.2 2.8L12 5.5l-2.8 1.2L8 9.5 6.8 6.7 4 5.5l2.8-1.2L8 1.5z" fill="#0787ff"/>
-        <path d="M12.5 9l.55 1.3L14.3 11l-1.45.65L12.5 13l-.55-1.35L10.7 11l1.45-.7L12.5 9z" fill="#0787ff" opacity="0.85"/>
-      </svg>
-    ),
-    keywords: ['ai', 'berry', 'write', 'generate', 'auto', 'draft'],
-  },
-  {
-    id: 'text',
-    label: 'Text',
-    hint: 'Just start writing with plain text',
-    icon: <span className="text-[13px] font-medium text-slate-700">T</span>,
-    keywords: ['text', 'paragraph', 'plain'],
-  },
-  {
-    id: 'h1',
-    label: 'Heading 1',
-    hint: 'Big section heading',
-    icon: <span className="text-[13px] font-bold text-slate-700">H1</span>,
-    keywords: ['heading', 'h1', 'title', 'big'],
-  },
-  {
-    id: 'h2',
-    label: 'Heading 2',
-    hint: 'Medium section heading',
-    icon: <span className="text-[12px] font-bold text-slate-700">H2</span>,
-    keywords: ['heading', 'h2', 'subtitle'],
-  },
-  {
-    id: 'quote',
-    label: 'Quote',
-    hint: 'Highlight a passage from a source',
-    icon: (
-      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-        <path d="M4 5.5C3 5.9 2.4 6.6 2.4 7.6c0 1 .8 1.6 1.6 1.6s1.4-.6 1.4-1.4c0-.8-.6-1.3-1.2-1.3M10 5.5c-1 .4-1.6 1.1-1.6 2.1 0 1 .8 1.6 1.6 1.6s1.4-.6 1.4-1.4c0-.8-.6-1.3-1.2-1.3" stroke="#525252" strokeWidth="1.3" strokeLinecap="round"/>
-      </svg>
-    ),
-    keywords: ['quote', 'blockquote', 'citation'],
-  },
-  {
-    id: 'link',
-    label: 'Link',
-    hint: 'Insert a URL',
-    icon: (
-      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-        <path d="M5.5 8.5l3-3M4 7l-1 1a2.83 2.83 0 004 4l1-1M9 5l1-1a2.83 2.83 0 00-4-4L5 1" stroke="#525252" strokeWidth="1.4" strokeLinecap="round"/>
-      </svg>
-    ),
-    keywords: ['link', 'url', 'href'],
-  },
-]
-
-function SlashMenu({
-  query, anchor, onSelect, onClose,
-}: {
-  query: string
-  anchor: { top: number; left: number }
-  onSelect: (cmd: SlashCommand) => void
-  onClose: () => void
-}) {
-  const filtered = (() => {
-    if (!query) return SLASH_COMMANDS
-    const q = query.toLowerCase()
-    return SLASH_COMMANDS.filter(c =>
-      c.label.toLowerCase().includes(q) || c.keywords.some(k => k.includes(q))
-    )
-  })()
-
-  const [activeIndex, setActiveIndex] = useState(0)
-  useEffect(() => { setActiveIndex(0) }, [query])
-
-  useEffect(() => {
-    function handle(e: KeyboardEvent) {
-      if (e.key === 'ArrowDown') {
-        e.preventDefault()
-        setActiveIndex(i => Math.min(i + 1, filtered.length - 1))
-      } else if (e.key === 'ArrowUp') {
-        e.preventDefault()
-        setActiveIndex(i => Math.max(i - 1, 0))
-      } else if (e.key === 'Enter') {
-        if (filtered[activeIndex]) {
-          e.preventDefault()
-          onSelect(filtered[activeIndex])
-        }
-      } else if (e.key === 'Escape') {
-        e.preventDefault()
-        onClose()
-      }
-    }
-    window.addEventListener('keydown', handle)
-    return () => window.removeEventListener('keydown', handle)
-  }, [filtered, activeIndex, onSelect, onClose])
-
-  if (filtered.length === 0) {
-    return (
-      <div
-        className="fixed z-50 bg-white border border-slate-200 rounded-[10px] p-3 w-[280px] berry-toolbar-in"
-        style={{ top: anchor.top, left: anchor.left, boxShadow: '0px 10px 15px -3px rgba(0,0,0,0.1), 0px 4px 6px rgba(0,0,0,0.05)' }}
-      >
-        <p className="text-[12px] text-slate-500" style={{ fontFamily: 'var(--font-inter)' }}>No commands match &quot;{query}&quot;</p>
-      </div>
-    )
-  }
-
-  return (
-    <div
-      className="fixed z-50 bg-white border border-slate-200 rounded-[10px] p-[6px] w-[280px] max-h-[320px] overflow-y-auto berry-toolbar-in"
-      style={{ top: anchor.top, left: anchor.left, boxShadow: '0px 10px 15px -3px rgba(0,0,0,0.1), 0px 4px 6px rgba(0,0,0,0.05)' }}
-      onMouseDown={e => e.preventDefault()}
-    >
-      {filtered.map((cmd, i) => (
-        <button
-          key={cmd.id}
-          type="button"
-          onMouseDown={e => e.preventDefault()}
-          onClick={() => onSelect(cmd)}
-          onMouseEnter={() => setActiveIndex(i)}
-          className={`flex items-center gap-[10px] w-full p-[8px] rounded-[6px] text-left transition-colors ${
-            i === activeIndex ? 'bg-slate-100' : 'hover:bg-slate-50'
-          }`}
-        >
-          <div className="shrink-0 size-[28px] rounded-[6px] flex items-center justify-center bg-slate-50">
-            {cmd.icon}
-          </div>
-          <div className="flex flex-col min-w-0 flex-1">
-            <span className="text-[13px] font-medium leading-[1.3] text-slate-900 truncate" style={{ fontFamily: 'var(--font-inter)' }}>
-              {cmd.label}
-            </span>
-            <span className="text-[11px] leading-[1.3] text-slate-500 truncate" style={{ fontFamily: 'var(--font-inter)' }}>
-              {cmd.hint}
-            </span>
-          </div>
-        </button>
-      ))}
-    </div>
-  )
-}
+// Lightweight command shape kept only for `handleSelectionCommand` (the
+// floating selection toolbar's "Berry write" action). The dedicated SlashMenu
+// has been replaced by SectionPicker for consistency with the "+ Add new
+// section" surface.
+type SlashCommand = { id: string }
 
 // ── Caret position measurement (mirror-div technique) ────────────────────────
 // Computes where the caret in a textarea is, so the Berry pill can follow it.
@@ -916,6 +789,8 @@ function NewsEditor({
   onSelectSection,
   onUpdateSection,
   onReplaceSection,
+  onUpdateTemplateCell,
+  onUpdateTemplateImage,
 }: {
   sources: SourceFile[]
   onRequestAddSection: (anchor: PickerAnchor, query?: string) => void
@@ -924,6 +799,8 @@ function NewsEditor({
   onSelectSection: (id: string) => void
   onUpdateSection: (id: string, content: string) => void
   onReplaceSection: (id: string, anchor: PickerAnchor) => void
+  onUpdateTemplateCell?: (id: string, cellIndex: number, value: string) => void
+  onUpdateTemplateImage?: (id: string, url: string | undefined) => void
 }) {
   const [title, setTitle] = useState('')
   const [subtitle, setSubtitle] = useState('')
@@ -948,7 +825,7 @@ function NewsEditor({
     field: 'title' | 'subtitle'
     slashPos: number
     query: string
-    anchor: { top: number; left: number }
+    anchor: { top: number; left: number; triggerTop?: number }
   }
   const [slashState, setSlashState] = useState<SlashState | null>(null)
 
@@ -959,7 +836,7 @@ function NewsEditor({
     field: 'title' | 'subtitle'
     start: number
     end: number
-    anchor: { top: number; left: number }
+    anchor: { top: number; left: number; triggerTop?: number }
   }
   const [selectionState, setSelectionState] = useState<SelectionState | null>(null)
   function closeSelectionMenu() { setSelectionState(null) }
@@ -980,7 +857,7 @@ function NewsEditor({
     const rect = ta.getBoundingClientRect()
     setSelectionState({
       field, start, end,
-      anchor: { top: rect.bottom + 6, left: rect.left },
+      anchor: { top: rect.bottom + 6, left: rect.left, triggerTop: rect.top },
     })
   }
 
@@ -1002,7 +879,7 @@ function NewsEditor({
         field,
         slashPos: caret - 1,
         query: '',
-        anchor: { top: rect.bottom + 6, left: rect.left },
+        anchor: { top: rect.bottom + 6, left: rect.left, triggerTop: rect.top },
       })
       return
     }
@@ -1277,27 +1154,27 @@ function NewsEditor({
               </div>
             )}
 
-            {/* Slash command list (Notion-style) — only when "/" is typed */}
+            {/* Slash picker — opens when "/" is typed in title/subtitle. Uses
+                the SAME SectionPicker UI as the "+ Add new section" button so
+                both surfaces feel identical. Picking 'berry' triggers the AI
+                write; other section types only consume the trigger (title /
+                subtitle are plain-text fields and can't host rich blocks). */}
             {slashState && (
-              <SlashMenu
-                query={slashState.query}
+              <SectionPicker
                 anchor={slashState.anchor}
-                onSelect={handleSlashSelect}
+                initialQuery={slashState.query}
+                onPick={type => handleSlashSelect({ id: type === 'berry' ? 'berry-write' : type } as SlashCommand)}
                 onClose={closeSlash}
               />
             )}
 
             {/* Full Berry toolbar — only when text is selected (editing words) */}
             {!slashState && selectionState && (
-              <div
-                className="fixed z-50 berry-toolbar-in"
-                style={{ top: selectionState.anchor.top, left: selectionState.anchor.left }}
-              >
-                <FloatingBerryToolbar
-                  onBerryWrite={() => handleSelectionCommand({ id: 'berry-write' } as SlashCommand)}
-                  berryPhase={selectionState.field === 'title' ? titleAi.phase : subtitleAi.phase}
-                />
-              </div>
+              <FloatingSelectionToolbar
+                anchor={selectionState.anchor}
+                phase={selectionState.field === 'title' ? titleAi.phase : subtitleAi.phase}
+                onBerryWrite={() => handleSelectionCommand({ id: 'berry-write' } as SlashCommand)}
+              />
             )}
           </div>
         </div>
@@ -1676,20 +1553,25 @@ function NewsEditor({
             <EmptyBlockPlaceholder
               onClick={e => {
                 const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
-                onRequestAddSection({ top: r.bottom + 6, left: r.left, width: r.width })
+                onRequestAddSection({ top: r.bottom + 6, left: r.left, width: r.width, triggerTop: r.top })
               }}
             />
           ) : (
             <div className="flex flex-col gap-3 w-full">
               {sections.map(s => (
-                <BlockEditor
-                  key={s.id}
-                  block={s}
-                  isActive={s.id === activeSectionId}
-                  onFocus={() => onSelectSection(s.id)}
-                  onChange={c => onUpdateSection(s.id, c)}
-                  onReplaceRequest={anchor => onReplaceSection(s.id, anchor)}
-                />
+                // `data-section-id` is the scroll target the TOC click handler
+                // looks up via querySelector. Keep it stable per section id.
+                <div key={s.id} data-section-id={s.id} className="scroll-mt-6">
+                  <BlockEditor
+                    block={s}
+                    isActive={s.id === activeSectionId}
+                    onFocus={() => onSelectSection(s.id)}
+                    onChange={c => onUpdateSection(s.id, c)}
+                    onReplaceRequest={anchor => onReplaceSection(s.id, anchor)}
+                    onTemplateCellChange={(i, v) => onUpdateTemplateCell?.(s.id, i, v)}
+                    onTemplateImageChange={url => onUpdateTemplateImage?.(s.id, url)}
+                  />
+                </div>
               ))}
             </div>
           )}
@@ -1700,7 +1582,7 @@ function NewsEditor({
           <button
             onClick={e => {
               const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
-              onRequestAddSection({ top: r.bottom + 6, left: r.left })
+              onRequestAddSection({ top: r.bottom + 6, left: r.left, triggerTop: r.top })
             }}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-[12px] bg-slate-50 border border-slate-200 self-start hover:bg-slate-100 transition-colors"
           >
@@ -1785,14 +1667,14 @@ function AddSourceModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 backdrop-blur-[6px] bg-white/20" onClick={onClose} />
-      <div className="relative z-10 flex flex-col w-[655px] bg-white border border-[#e5e5e5] rounded-[16px] overflow-hidden shadow-[0px_8px_24px_-6px_rgba(0,0,0,0.16),0px_0px_1px_0px_rgba(0,0,0,0.18)]">
+      <div className="relative z-10 flex flex-col w-[655px] max-h-[90vh] bg-white border border-[#e5e5e5] rounded-[16px] overflow-hidden shadow-[0px_8px_24px_-6px_rgba(0,0,0,0.16),0px_0px_1px_0px_rgba(0,0,0,0.18)]">
 
         {/* Gradient header — exact two-layer radial gradient from Figma
             (40000003:34624). The base layer is a large off-canvas radial that
             fades blue → light → white top-down; the overlay adds a soft cool-
             white highlight near the upper middle. Stops match Figma exactly. */}
         <div
-          className="relative flex flex-col items-center w-full"
+          className="relative flex flex-col items-center w-full flex-1 min-h-0 overflow-y-auto"
           style={{
             backgroundImage: `url("data:image/svg+xml;utf8,<svg viewBox='0 0 655 423' xmlns='http://www.w3.org/2000/svg' preserveAspectRatio='none'><rect x='0' y='0' height='100%25' width='100%25' fill='url(%23g)'/><defs><radialGradient id='g' gradientUnits='userSpaceOnUse' cx='0' cy='0' r='10' gradientTransform='matrix(1.85 39.183 -60.533 0.89338 327 19.496)'><stop stop-color='rgb(240,246,255)' offset='0'/><stop stop-color='rgb(228,244,255)' stop-opacity='0' offset='1'/></radialGradient></defs></svg>"), url("data:image/svg+xml;utf8,<svg viewBox='0 0 655 423' xmlns='http://www.w3.org/2000/svg' preserveAspectRatio='none'><rect x='0' y='0' height='100%25' width='100%25' fill='url(%23g)'/><defs><radialGradient id='g' gradientUnits='userSpaceOnUse' cx='0' cy='0' r='10' gradientTransform='matrix(-0.5 103.65 -160.75 -0.77545 341.5 -771.33)'><stop stop-color='rgb(7,135,255)' offset='0.45'/><stop stop-color='rgb(21,142,255)' offset='0.475'/><stop stop-color='rgb(34,148,255)' offset='0.5'/><stop stop-color='rgb(61,161,255)' offset='0.549'/><stop stop-color='rgb(88,174,255)' offset='0.599'/><stop stop-color='rgb(115,187,255)' offset='0.649'/><stop stop-color='rgb(169,213,255)' offset='0.748'/><stop stop-color='rgb(223,240,255)' offset='0.847'/><stop stop-color='rgb(255,255,255)' offset='1'/></radialGradient></defs></svg>")`,
             backgroundSize: '100% 100%, 100% 100%',
@@ -1840,7 +1722,7 @@ function AddSourceModal({
 
             {/* Pending files list */}
             {pendingFiles.length > 0 && (
-              <div className="flex flex-col gap-1 w-full">
+              <div className="flex flex-col gap-1 w-full max-h-[260px] overflow-y-auto pr-1 -mr-1">
                 {pendingFiles.map((file, i) => (
                   <div key={i} className="flex items-center gap-2 px-3 py-2 bg-white rounded-[8px] border border-slate-100">
                     <FileIcon />
@@ -1970,6 +1852,18 @@ export default function NewNewsPage() {
   // can be restored from the TOC's bottom Archive group.
   const [archived, setArchived] = useState<Section[]>([])
   const [activeSectionId, setActiveSectionId] = useState<string | null>(null)
+
+  // Selecting a section from the TOC also scrolls the block into view. We
+  // defer to the next frame so React has committed the new `isActive` state
+  // before we hand off to the browser's smooth scroller.
+  const handleSelectSection = useCallback((id: string) => {
+    setActiveSectionId(id)
+    requestAnimationFrame(() => {
+      document
+        .querySelector(`[data-section-id="${id}"]`)
+        ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+  }, [])
   // Picker can be opened to add a new section ("mode: 'add'") or to replace
   // the type of an existing one ("mode: 'replace'") via the block's Replace
   // button. The replace flow swaps the section's type without losing content.
@@ -2041,25 +1935,41 @@ export default function NewNewsPage() {
     })
   }, [])
 
-  // Template picks add a pre-set sequence of blocks instead of a single one.
+  // Template picks insert a single template block whose internal renderer
+  // lays the cells out side-by-side (Figma 40000081:28825 / 2752:16318).
+  // Two-column is still expressed as two back-to-back `normal` blocks since
+  // the Figma for it lives in the picker preview only.
   const handlePickTemplate = useCallback((id: TemplateId) => {
-    const make = (type: SectionType): Section => ({
-      id: `sec-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-      type,
-      title: '',
-    })
+    const newId = () => `sec-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
     const blocks: Section[] = (() => {
       switch (id) {
-        case 'image-and-text': return [make('image'), make('normal')]
-        case 'text-and-image': return [make('normal'), make('image')]
-        case 'two-column':     return [make('normal'), make('normal')]
-        case 'three-column':   return [make('normal'), make('normal'), make('normal')]
+        case 'image-and-text': return [{ id: newId(), type: 'tpl-img-txt', title: '', cells: [''] }]
+        case 'text-and-image': return [{ id: newId(), type: 'tpl-txt-img', title: '', cells: [''] }]
+        case 'three-column':   return [{ id: newId(), type: 'tpl-3col',    title: '', cells: ['', '', ''] }]
+        case 'two-column':     return [
+          { id: newId(), type: 'normal', title: '' },
+          { id: newId(), type: 'normal', title: '' },
+        ]
       }
     })()
     setSections(prev => [...prev, ...blocks])
     setActiveSectionId(blocks[blocks.length - 1].id)
     setPicker(null)
     setLeftView('toc')
+  }, [])
+
+  // Per-cell updates for template blocks (Image+Text, Three column, etc).
+  const handleUpdateTemplateCell = useCallback((sectionId: string, cellIndex: number, value: string) => {
+    setSections(prev => prev.map(s => {
+      if (s.id !== sectionId) return s
+      const cells = [...(s.cells ?? [])]
+      cells[cellIndex] = value
+      return { ...s, cells }
+    }))
+  }, [])
+
+  const handleUpdateTemplateImage = useCallback((sectionId: string, url: string | undefined) => {
+    setSections(prev => prev.map(s => s.id === sectionId ? { ...s, imageUrl: url } : s))
   }, [])
 
   const handleAddSource = useCallback((source: SourceFile) => {
@@ -2100,7 +2010,7 @@ export default function NewNewsPage() {
           onChangeView={setLeftView}
           sections={sections}
           activeSectionId={activeSectionId}
-          onSelectSection={setActiveSectionId}
+          onSelectSection={handleSelectSection}
           onReorderSections={handleReorderSections}
           onRequestAddSection={handleRequestAddSection}
           archived={archived}
@@ -2116,9 +2026,11 @@ export default function NewNewsPage() {
           onRequestAddSection={handleRequestAddSection}
           sections={sections}
           activeSectionId={activeSectionId}
-          onSelectSection={setActiveSectionId}
+          onSelectSection={handleSelectSection}
           onUpdateSection={handleUpdateSection}
           onReplaceSection={handleReplaceSection}
+          onUpdateTemplateCell={handleUpdateTemplateCell}
+          onUpdateTemplateImage={handleUpdateTemplateImage}
         />
       </div>
 

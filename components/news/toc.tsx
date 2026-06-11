@@ -1,6 +1,50 @@
 'use client'
 
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
+
+// ─────────────────────────────────────────────────────────────────────────────
+// useFlipPosition — viewport-aware placement for any popover/dropdown.
+//
+// Callers compute an anchor as `{ top: trigger.bottom + 6, left: trigger.left,
+// triggerTop: trigger.top }` (the +6 keeps the 6px design spacing). The hook
+// measures the popover after it mounts and, if it would overflow the viewport
+// bottom, flips it above the trigger (still respecting the 6px gap). It also
+// clamps horizontally so the popover never bleeds off the side, and re-runs
+// on window resize. Returns the final {top, left} to apply to the element.
+// ─────────────────────────────────────────────────────────────────────────────
+export function useFlipPosition(
+  anchor: { top: number; left: number; width?: number; triggerTop?: number },
+  ref: React.RefObject<HTMLElement | null>,
+) {
+  const [pos, setPos] = useState<{ top: number; left: number }>({ top: anchor.top, left: anchor.left })
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const compute = () => {
+      const w = el.offsetWidth
+      const h = el.offsetHeight
+      const vw = window.innerWidth
+      const vh = window.innerHeight
+      const margin = 8
+      let top = anchor.top
+      let left = anchor.left
+      // Flip above the trigger if there isn't room below.
+      if (top + h > vh - margin) {
+        const triggerTop = anchor.triggerTop ?? anchor.top
+        const flipped = triggerTop - 6 - h
+        top = flipped >= margin ? flipped : Math.max(margin, vh - margin - h)
+      }
+      // Clamp to viewport horizontally.
+      if (left + w > vw - margin) left = Math.max(margin, vw - margin - w)
+      if (left < margin) left = margin
+      setPos({ top, left })
+    }
+    compute()
+    window.addEventListener('resize', compute)
+    return () => window.removeEventListener('resize', compute)
+  }, [anchor.top, anchor.left, anchor.triggerTop, anchor.width, ref])
+  return pos
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Section model — Table of Contents items + the picker that creates them
@@ -9,6 +53,14 @@ import React, { useEffect, useRef, useState } from 'react'
 export type SectionType =
   | 'normal' | 'h1' | 'h2' | 'h3' | 'quote' | 'embed'
   | 'berry' | 'numbered' | 'bullet' | 'image' | 'file'
+  // ── Multi-cell template blocks (Figma 40000081:28825 + 2752:16318) ─────────
+  // These render a single TOC entry but a side-by-side layout in the editor:
+  //   tpl-img-txt → [image upload] | [text passage]
+  //   tpl-txt-img → [text passage] | [image upload]
+  //   tpl-3col    → [text] | [text] | [text]
+  // Two-column was kept as plain back-to-back `normal` blocks via the
+  // existing template handler.
+  | 'tpl-img-txt' | 'tpl-txt-img' | 'tpl-3col'
 
 export type Section = {
   id: string
@@ -17,6 +69,11 @@ export type Section = {
   // type's display label when this is empty, so an unedited Heading 1 block
   // still surfaces as "Heading 1" in the outline.
   title: string
+  // Optional per-cell content for multi-cell template blocks. cells[0] is the
+  // first cell (e.g. the text in `tpl-img-txt`), etc. Plain blocks ignore it.
+  cells?: string[]
+  // Optional image URL for the image cell in tpl-img-txt / tpl-txt-img.
+  imageUrl?: string
 }
 
 // ── Icons (16/20 viewBox; match Figma stroke weights) ────────────────────────
@@ -164,7 +221,17 @@ const TYPES: TypeMeta[] = [
   { type: 'file',     label: 'File attachment',Icon: IconFile,                                                 group: 'assets', keywords: ['file', 'attachment', 'doc'] },
 ]
 
-const TYPE_BY: Record<SectionType, TypeMeta> = TYPES.reduce(
+// Template blocks live outside TYPES so they don't show up in the picker's
+// Suggested/Assets/Text grids — they're inserted exclusively via the Template
+// tab cards. We still register their meta in TYPE_BY so the TOC entry and any
+// `TYPE_BY[type]` lookups elsewhere don't blow up.
+const TEMPLATE_TYPES: TypeMeta[] = [
+  { type: 'tpl-img-txt', label: 'Image and Text', Icon: IconImage, group: 'assets', keywords: [] },
+  { type: 'tpl-txt-img', label: 'Text and Image', Icon: IconImage, group: 'assets', keywords: [] },
+  { type: 'tpl-3col',    label: 'Three column',   Icon: IconText,  group: 'text',   keywords: [] },
+]
+
+const TYPE_BY: Record<SectionType, TypeMeta> = [...TYPES, ...TEMPLATE_TYPES].reduce(
   (m, t) => { m[t.type] = t; return m },
   {} as Record<SectionType, TypeMeta>,
 )
@@ -216,23 +283,55 @@ export function LeftViewToggle({ value, onChange }: {
 
 export function TableOfContents({
   sections,
+  archived = [],
   activeId,
   onSelect,
   onReorder,
   onAddRequest,
+  onArchive,
+  onRestore,
 }: {
   sections: Section[]
+  archived?: Section[]
   activeId: string | null
   onSelect: (id: string) => void
   onReorder: (from: number, to: number) => void
-  onAddRequest: (anchor: { top: number; left: number; width?: number }) => void
+  onAddRequest: (anchor: PickerAnchor) => void
+  onArchive?: (id: string) => void
+  onRestore?: (id: string) => void
 }) {
   const isEmpty = sections.length === 0
   const dragFrom = useRef<number | null>(null)
+  // `dragging` mirrors the dragFrom ref so we can reactively render the
+  // archive drop zone only while a drag is in progress. `archiveHover`
+  // highlights the zone when the pointer is over it.
+  const [dragging, setDragging] = useState<number | null>(null)
+  const [archiveHover, setArchiveHover] = useState(false)
 
   function handleAddClick(e: React.MouseEvent) {
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
-    onAddRequest({ top: r.bottom + 6, left: r.left, width: r.width })
+    onAddRequest({ top: r.bottom + 6, left: r.left, width: r.width, triggerTop: r.top })
+  }
+
+  // Customise the browser's drag preview so the ghost gets the same rounded
+  // card treatment as the live list item (border + shadow + 8px radius).
+  // Without this the native ghost is just the bare DOM node, which renders
+  // with sharp corners on macOS Chromium.
+  function styleDragGhost(e: React.DragEvent<HTMLDivElement>) {
+    const node = e.currentTarget
+    const clone = node.cloneNode(true) as HTMLDivElement
+    clone.style.position = 'absolute'
+    clone.style.top = '-9999px'
+    clone.style.left = '-9999px'
+    clone.style.width = `${node.offsetWidth}px`
+    clone.style.background = '#ffffff'
+    clone.style.border = '1px solid #e5e7eb'
+    clone.style.borderRadius = '8px'
+    clone.style.boxShadow = '0px 8px 24px -6px rgba(0,0,0,0.16), 0px 0px 1px rgba(0,0,0,0.18)'
+    clone.style.pointerEvents = 'none'
+    document.body.appendChild(clone)
+    e.dataTransfer.setDragImage(clone, 12, 12)
+    setTimeout(() => document.body.removeChild(clone), 0)
   }
 
   return (
@@ -265,21 +364,32 @@ export function TableOfContents({
           {sections.map((s, i) => {
             const meta = TYPE_BY[s.type]
             const active = activeId === s.id
+            const isSource = dragging === i
             return (
               <div
                 key={s.id}
                 draggable
-                onDragStart={() => { dragFrom.current = i }}
+                onDragStart={e => {
+                  dragFrom.current = i
+                  setDragging(i)
+                  styleDragGhost(e)
+                }}
+                onDragEnd={() => { setDragging(null); setArchiveHover(false) }}
                 onDragOver={e => e.preventDefault()}
                 onDrop={() => {
                   const from = dragFrom.current
                   dragFrom.current = null
+                  setDragging(null)
                   if (from === null || from === i) return
                   onReorder(from, i)
                 }}
                 onClick={() => onSelect(s.id)}
-                className={`group flex items-center gap-1.5 p-2 rounded-[8px] cursor-pointer select-none ${
-                  active ? 'bg-[#f1f5f9]' : 'hover:bg-slate-50'
+                className={`group flex items-center gap-1.5 p-2 rounded-[8px] cursor-pointer select-none border transition-colors ${
+                  isSource
+                    ? 'border-slate-200 bg-white shadow-[0px_1px_2px_rgba(0,0,0,0.04)] opacity-60'
+                    : active
+                      ? 'bg-[#f1f5f9] border-transparent'
+                      : 'border-transparent hover:bg-slate-50 hover:border-slate-200'
                 }`}
               >
                 <div className="shrink-0 size-5 flex items-center justify-center">
@@ -318,7 +428,100 @@ export function TableOfContents({
           Add new section
         </span>
       </button>
+
+      {/* Spacer pushes the Archive group + drop zone to the bottom of the panel. */}
+      <div className="flex-1" />
+
+      {/* Archived items — click to restore. Hidden when there's nothing
+          to restore and no drag in progress, so the panel stays clean. */}
+      {(archived.length > 0 || dragging !== null) && (
+        <div className="flex flex-col gap-1.5">
+          {archived.length > 0 && (
+            <>
+              <div className="flex items-center px-2">
+                <span
+                  className="text-[12px] font-medium leading-[1.5] text-[#737373]"
+                  style={{ fontFamily: 'var(--font-inter)' }}
+                >
+                  Archive
+                </span>
+              </div>
+              <div className="flex flex-col">
+                {archived.map(s => {
+                  const meta = TYPE_BY[s.type]
+                  return (
+                    <button
+                      type="button"
+                      key={s.id}
+                      onClick={() => onRestore?.(s.id)}
+                      title="Restore"
+                      className="group flex items-center gap-1.5 p-2 rounded-[8px] text-left hover:bg-slate-50 transition-colors"
+                    >
+                      <div className="shrink-0 size-5 flex items-center justify-center">
+                        <meta.Icon size={20} color="#94a3b8" />
+                      </div>
+                      <span
+                        className="flex-1 min-w-0 text-[14px] leading-[1.5] tracking-[-0.14px] truncate text-[#94a3b8] line-through"
+                        style={{ fontFamily: 'var(--font-inter)' }}
+                      >
+                        {s.title || meta.label}
+                      </span>
+                      <span
+                        className="text-[11px] text-[#0787ff] opacity-0 group-hover:opacity-100 transition-opacity"
+                        style={{ fontFamily: 'var(--font-inter)' }}
+                      >
+                        Restore
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            </>
+          )}
+
+          {/* Drag-to-archive drop zone — only visible during a drag. */}
+          {dragging !== null && onArchive && (
+            <div
+              onDragOver={e => { e.preventDefault(); setArchiveHover(true) }}
+              onDragLeave={() => setArchiveHover(false)}
+              onDrop={() => {
+                const from = dragFrom.current
+                dragFrom.current = null
+                setDragging(null)
+                setArchiveHover(false)
+                if (from === null) return
+                onArchive(sections[from].id)
+              }}
+              className={`flex items-center gap-1.5 p-2 rounded-[8px] border border-dashed transition-colors ${
+                archiveHover
+                  ? 'bg-rose-50 border-rose-300 text-rose-600'
+                  : 'bg-[#fafafa] border-[#e5e5e5] text-[#737373]'
+              }`}
+            >
+              <div className="shrink-0 size-5 flex items-center justify-center">
+                <IconTrash size={18} color={archiveHover ? '#e11d48' : '#737373'} />
+              </div>
+              <span
+                className="flex-1 text-[14px] leading-[1.5] tracking-[-0.14px]"
+                style={{ fontFamily: 'var(--font-inter)' }}
+              >
+                {archiveHover ? 'Release to archive' : 'Drop here to archive'}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
     </div>
+  )
+}
+
+// Local trash icon — kept inline so we don't pull a new dep just for this.
+function IconTrash({ size = 16, color = '#737373' }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none">
+      <path d="M3 4h10M6.5 4V2.5h3V4M5 4l.5 9a1 1 0 001 1h3a1 1 0 001-1L11 4M7 7v4M9 7v4"
+            stroke={color} strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
   )
 }
 
@@ -332,7 +535,7 @@ const SUGGESTED: SectionType[] = [
   'berry', 'numbered', 'bullet', 'image', 'file',
 ]
 
-export type PickerAnchor = { top: number; left: number; width?: number }
+export type PickerAnchor = { top: number; left: number; width?: number; triggerTop?: number }
 
 export type TemplateId = 'image-and-text' | 'text-and-image' | 'two-column' | 'three-column'
 
@@ -350,6 +553,12 @@ export function SectionPicker({
   initialQuery?: string
 }) {
   const [query, setQuery] = useState(initialQuery)
+  // Tab filter — `all` is the full Suggested+Assets+Text view (Figma
+  // Dropdown-Template-All, 40000065:28568). `insert` shows just the asset/
+  // embed surface used when inserting media into a text flow. `template`
+  // shows the multi-block layout cards (Figma Dropdown-Template,
+  // 40000065:28477).
+  const [tab, setTab] = useState<'all' | 'insert' | 'template'>('all')
   const rootRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -380,13 +589,14 @@ export function SectionPicker({
     .filter(matches)
 
   const width = Math.max(anchor.width ?? 0, 620)
+  const pos = useFlipPosition({ ...anchor, width }, rootRef)
 
   return (
     <div
       ref={rootRef}
       role="dialog"
       className="fixed z-50 bg-white border border-slate-200 rounded-[16px] shadow-[0px_12px_24px_-6px_rgba(31,38,54,0.18),0px_0px_8px_0px_rgba(31,38,54,0.04)]"
-      style={{ top: anchor.top, left: anchor.left, width, maxHeight: '60vh' }}
+      style={{ top: pos.top, left: pos.left, width, maxHeight: '60vh' }}
     >
       <div className="flex flex-col gap-4 p-2 overflow-hidden">
         {/* Search */}
@@ -402,43 +612,194 @@ export function SectionPicker({
           />
         </div>
 
-        <div className="flex flex-col gap-4 overflow-y-auto pb-2" style={{ maxHeight: '50vh' }}>
-          {/* Suggested — only when no search */}
-          {q === '' && (
-            <PickerGroup label="Suggested">
-              {filteredSuggested.map(m => (
-                <PickerItem key={m.type} meta={m} onPick={() => onPick(m.type)} />
-              ))}
-              <BerryItem onPick={() => onPick('berry')} />
-            </PickerGroup>
+        {/* Tab pills — All / Insert / Template (Figma 40000065:28574). The
+            search box is shared across tabs; pills filter what's listed below. */}
+        <div className="flex items-center gap-2 px-0">
+          <PickerTab label="All"      active={tab === 'all'}      onClick={() => setTab('all')} />
+          <PickerTab label="Insert"   active={tab === 'insert'}   onClick={() => setTab('insert')} />
+          <PickerTab label="Template" active={tab === 'template'} onClick={() => setTab('template')} />
+        </div>
+
+        {/* Fixed-height body — the Template tab has fewer rows than All, so we
+            pin a `minHeight` here. The dropdown no longer collapses when the
+            user switches tabs. */}
+        <div className="flex flex-col gap-4 overflow-y-auto pb-2" style={{ minHeight: '420px', maxHeight: '50vh' }}>
+          {tab === 'all' && (
+            <>
+              {/* Suggested — only when no search */}
+              {q === '' && (
+                <PickerGroup label="Suggested">
+                  {filteredSuggested.map(m => (
+                    <PickerItem key={m.type} meta={m} onPick={() => onPick(m.type)} />
+                  ))}
+                  <BerryItem onPick={() => onPick('berry')} />
+                </PickerGroup>
+              )}
+
+              {filteredAssets.length > 0 && (
+                <PickerGroup label="Assets">
+                  {filteredAssets.map(m => (
+                    <PickerItem key={m.type} meta={m} onPick={() => onPick(m.type)} />
+                  ))}
+                </PickerGroup>
+              )}
+
+              {q !== '' && filteredText.length > 0 && (
+                <PickerGroup label="Text">
+                  {filteredText.map(m => (
+                    <PickerItem key={m.type} meta={m} highlighted onPick={() => onPick(m.type)} />
+                  ))}
+                </PickerGroup>
+              )}
+
+              {q !== '' && filteredText.length === 0 && filteredAssets.length === 0 && (
+                <p
+                  className="text-[14px] leading-[1.5] text-[#737373] px-3 py-2"
+                  style={{ fontFamily: 'var(--font-inter)' }}
+                >
+                  No matching section type.
+                </p>
+              )}
+            </>
           )}
 
-          {filteredAssets.length > 0 && (
+          {tab === 'insert' && (
             <PickerGroup label="Assets">
-              {filteredAssets.map(m => (
-                <PickerItem key={m.type} meta={m} onPick={() => onPick(m.type)} />
-              ))}
+              {filteredAssets.length > 0
+                ? filteredAssets.map(m => (
+                    <PickerItem key={m.type} meta={m} onPick={() => onPick(m.type)} />
+                  ))
+                : (
+                  <p
+                    className="text-[14px] leading-[1.5] text-[#737373] px-3 py-2"
+                    style={{ fontFamily: 'var(--font-inter)' }}
+                  >
+                    No matching assets.
+                  </p>
+                )}
             </PickerGroup>
           )}
 
-          {q !== '' && filteredText.length > 0 && (
-            <PickerGroup label="Text">
-              {filteredText.map(m => (
-                <PickerItem key={m.type} meta={m} highlighted onPick={() => onPick(m.type)} />
-              ))}
+          {tab === 'template' && (
+            <PickerGroup label="Snowberry template">
+              <TemplateCard id="image-and-text" label="Image and Text" onPick={onPickTemplate} />
+              <TemplateCard id="text-and-image" label="Text and Image" onPick={onPickTemplate} />
+              <TemplateCard id="two-column"     label="Two column"     onPick={onPickTemplate} />
+              <TemplateCard id="three-column"   label="Three column"   onPick={onPickTemplate} />
             </PickerGroup>
-          )}
-
-          {q !== '' && filteredText.length === 0 && filteredAssets.length === 0 && (
-            <p
-              className="text-[14px] leading-[1.5] text-[#737373] px-3 py-2"
-              style={{ fontFamily: 'var(--font-inter)' }}
-            >
-              No matching section type.
-            </p>
           )}
         </div>
       </div>
+    </div>
+  )
+}
+
+// ─── Tab pill — Figma 40000065:28575 (active) / 40000065:28579 (idle) ─────────
+function PickerTab({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex items-center justify-center px-3 py-1.5 rounded-[12px] border shadow-[0px_1px_0.25px_rgba(29,41,61,0.02)] transition-colors ${
+        active
+          ? 'bg-[#0f172a] border-[#0f172a] text-[#fafafa]'
+          : 'bg-white border-[#e5e7eb] text-[#4a5565] hover:bg-slate-50'
+      }`}
+    >
+      <span className="text-[12px] font-medium leading-5 whitespace-nowrap" style={{ fontFamily: 'var(--font-inter)' }}>
+        {label}
+      </span>
+    </button>
+  )
+}
+
+// ─── Template preview card — Figma 40000065:28501 / 28515 / 28529 / 28546 ────
+// 142×92 preview tile + label. The mini-mock shapes match the Figma greyscale
+// (`alpha/light/100` for filler bars, `alpha/light/200` for the heading bar,
+// `neutral/100` panel background, `neutral/200` border).
+function TemplateCard({ id, label, onPick }: { id: TemplateId; label: string; onPick?: (id: TemplateId) => void }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onPick?.(id)}
+      disabled={!onPick}
+      className="flex flex-col gap-1 items-start w-[142px] rounded-[8px] transition-opacity disabled:cursor-not-allowed disabled:opacity-50 hover:opacity-90"
+    >
+      <div className="relative w-[142px] h-[92px] rounded-[8px] bg-[#f5f5f5] border border-[#e5e5e5] overflow-hidden">
+        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
+          <TemplatePreview id={id} />
+        </div>
+      </div>
+      <span
+        className="px-2 text-[12px] font-medium leading-5 text-[#262626]"
+        style={{ fontFamily: 'var(--font-inter)' }}
+      >
+        {label}
+      </span>
+    </button>
+  )
+}
+
+function TemplatePreview({ id }: { id: TemplateId }) {
+  // Reusable shapes
+  const Heading = ({ className = '' }: { className?: string }) => (
+    <div className={`h-[9px] rounded-[2px] bg-[rgba(26,26,26,0.2)] ${className}`} />
+  )
+  const Line = ({ className = '' }: { className?: string }) => (
+    <div className={`h-[5px] rounded-[2px] bg-[rgba(26,26,26,0.09)] ${className}`} />
+  )
+  const TextStack = ({ className = '' }: { className?: string }) => (
+    <div className={`flex flex-col gap-[6px] w-[65px] ${className}`}>
+      <Heading className="w-full" />
+      <div className="flex flex-col gap-[2px]">
+        <Line className="w-full" /><Line className="w-full" /><Line className="w-full" /><Line className="w-full" />
+      </div>
+    </div>
+  )
+  const ImageTile = () => (
+    <div className="w-[52px] h-[46px] flex items-center justify-center rounded-[2px] bg-[rgba(26,26,26,0.09)]">
+      <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+        <rect x="3" y="3" width="12" height="12" rx="1.5" stroke="#525252" strokeWidth="1.2"/>
+        <circle cx="7" cy="7.5" r="1.2" fill="#525252"/>
+        <path d="M3 13l3.5-3.5 3 3L13 8l2 2" stroke="#525252" strokeWidth="1.2" fill="none"/>
+      </svg>
+    </div>
+  )
+  const Column = () => (
+    <div className="flex-1 flex flex-col gap-[2px]">
+      <Line /><Line /><Line /><Line />
+    </div>
+  )
+
+  if (id === 'image-and-text') {
+    return (
+      <div className="flex gap-[6px] items-center">
+        <ImageTile />
+        <TextStack />
+      </div>
+    )
+  }
+  if (id === 'text-and-image') {
+    return (
+      <div className="flex gap-[6px] items-center">
+        <TextStack />
+        <ImageTile />
+      </div>
+    )
+  }
+  if (id === 'two-column') {
+    return (
+      <div className="flex flex-col gap-[6px] w-[116px]">
+        <Heading />
+        <div className="flex gap-[6px]"><Column /><Column /></div>
+      </div>
+    )
+  }
+  // three-column
+  return (
+    <div className="flex flex-col gap-[6px] w-[116px]">
+      <Heading />
+      <div className="flex gap-[6px]"><Column /><Column /><Column /></div>
     </div>
   )
 }
@@ -1098,18 +1459,54 @@ export function BlockEditor({
   onFocus,
   onChange,
   onReplaceRequest,
+  onTemplateCellChange,
+  onTemplateImageChange,
 }: {
   block: Section
   isActive: boolean
   onFocus: () => void
   onChange: (content: string) => void
   onReplaceRequest: (anchor: PickerAnchor) => void
+  onTemplateCellChange?: (cellIndex: number, value: string) => void
+  onTemplateImageChange?: (url: string | undefined) => void
 }) {
   const cfg = blockRenderConfig(block.type)
 
+  function handleReplaceTpl(e: React.MouseEvent) {
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    onReplaceRequest({ top: r.bottom + 6, left: r.left, triggerTop: r.top })
+  }
+
+  // Templates use the SAME outer block wrapper (neutral-100 panel + thin
+  // border + 2px inset) and the SAME BlockToolbar as every other block, so
+  // they read as siblings in the editor list. Only the body differs.
+  if (block.type === 'tpl-img-txt' || block.type === 'tpl-txt-img' || block.type === 'tpl-3col') {
+    const label = block.type === 'tpl-img-txt' ? 'Image and Text'
+                : block.type === 'tpl-txt-img' ? 'Text and Image'
+                : 'Three column'
+    return (
+      <div
+        onClick={onFocus}
+        className="flex flex-col items-center w-full border border-[#e5e5e5] rounded-[12px] overflow-hidden bg-[#f5f5f5] p-[2px]"
+      >
+        <BlockToolbar
+          label={label}
+          variant="image"
+          showAi={false}
+          onReplaceClick={handleReplaceTpl}
+        />
+        <TemplateBlock
+          block={block}
+          onCellChange={onTemplateCellChange}
+          onImageChange={onTemplateImageChange}
+        />
+      </div>
+    )
+  }
+
   function handleReplace(e: React.MouseEvent) {
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
-    onReplaceRequest({ top: r.bottom + 6, left: r.left })
+    onReplaceRequest({ top: r.bottom + 6, left: r.left, triggerTop: r.top })
   }
 
   // Filled wrapper per Figma 2293:4327 — neutral-100 background with 2px
@@ -1132,6 +1529,97 @@ export function BlockEditor({
         onChange={onChange}
         autoFocus={isActive}
       />
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Template block — side-by-side cells matching Figma 40000081:28825 (three
+// column) and 2752:16318 (image+text). Each cell is a self-contained card so
+// the user can fill cells independently. Image cells expose the same "Drop /
+// click to upload" affordance as the standalone Image block, but laid out at
+// half-width inside the row.
+// ─────────────────────────────────────────────────────────────────────────────
+function TemplateBlock({
+  block,
+  onCellChange,
+  onImageChange,
+}: {
+  block: Section
+  onCellChange?: (cellIndex: number, value: string) => void
+  onImageChange?: (url: string | undefined) => void
+}) {
+  const isImgTxt = block.type === 'tpl-img-txt'
+  const isTxtImg = block.type === 'tpl-txt-img'
+  const isThreeCol = block.type === 'tpl-3col'
+  const cells = block.cells ?? []
+
+  const handleImagePick = () => {
+    if (!onImageChange) return
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = 'image/png,image/jpeg,image/webp'
+    input.onchange = () => {
+      const file = input.files?.[0]
+      if (file) onImageChange(URL.createObjectURL(file))
+    }
+    input.click()
+  }
+
+  const PassageCell = ({ index }: { index: number }) => (
+    <div className="flex-1 min-w-0 bg-white border border-[#e5e5e5] rounded-[12px] p-4">
+      <textarea
+        value={cells[index] ?? ''}
+        onChange={e => onCellChange?.(index, e.target.value)}
+        placeholder="Passage here.."
+        rows={6}
+        className="w-full bg-transparent outline-none resize-none text-[14px] leading-[1.5] tracking-[-0.14px] text-[#171717] placeholder:text-[#94a3b8]"
+        style={{ fontFamily: 'var(--font-inter)' }}
+      />
+    </div>
+  )
+
+  const ImageCell = () => (
+    <div
+      onClick={handleImagePick}
+      className="flex-1 min-w-0 h-[280px] flex flex-col items-center justify-center gap-2 bg-[#f8fafc] border border-[#e5e5e5] rounded-[12px] cursor-pointer hover:bg-slate-50 transition-colors overflow-hidden"
+    >
+      {block.imageUrl ? (
+        <img src={block.imageUrl} alt="" className="w-full h-full object-cover" />
+      ) : (
+        <>
+          <div className="flex items-center justify-center size-10 rounded-[10px] bg-[#dbeafe]">
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+              <path d="M9 12V4M9 4l-3 3M9 4l3 3M3 12v1.5A1.5 1.5 0 004.5 15h9a1.5 1.5 0 001.5-1.5V12" stroke="#0787ff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </div>
+          <p className="text-[14px] font-medium text-[#171717]" style={{ fontFamily: 'var(--font-inter)' }}>
+            Drop an image, or click to upload
+          </p>
+          <p className="text-[12px] text-[#737373]" style={{ fontFamily: 'var(--font-inter)' }}>
+            PNG, JPG, WEBP — up to 8MP
+          </p>
+        </>
+      )}
+    </div>
+  )
+
+  // Inner white card mirrors the body card every other block uses (see the
+  // ContentImageSection wrapper). The toolbar above already lives in the
+  // parent BlockEditor.
+  return (
+    <div className="flex flex-col gap-2 w-full bg-white rounded-[10px] p-4">
+      <div className="flex gap-3 w-full items-stretch">
+        {isImgTxt && (<><ImageCell /><PassageCell index={0} /></>)}
+        {isTxtImg && (<><PassageCell index={0} /><ImageCell /></>)}
+        {isThreeCol && (<><PassageCell index={0} /><PassageCell index={1} /><PassageCell index={2} /></>)}
+      </div>
+      <p
+        className="text-[12px] text-[#94a3b8] px-1"
+        style={{ fontFamily: 'var(--font-inter)' }}
+      >
+        Press &lsquo;Space&rsquo; for AI or &lsquo;/&rsquo; for commands..
+      </p>
     </div>
   )
 }
