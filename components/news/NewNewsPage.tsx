@@ -958,6 +958,36 @@ function NewsEditor({
   }
   const [dragOver, setDragOver] = useState(false)
   const [coverPreview, setCoverPreview] = useState<string | null>(null)
+
+  // ── Review-mode flow ──────────────────────────────────────────────────────
+  // Same surface swaps editor → read-only review. Three checks animate
+  // (running → pass) sequentially; Publish enables once all pass.
+  type CheckStatus = 'idle' | 'running' | 'pass'
+  const [mode, setMode] = useState<'edit' | 'review'>('edit')
+  const [checks, setChecks] = useState<{ grammar: CheckStatus; tone: CheckStatus; clarity: CheckStatus }>({
+    grammar: 'idle', tone: 'idle', clarity: 'idle',
+  })
+  const [published, setPublished] = useState(false)
+
+  function enterReview() {
+    setShowTypeMenu(false)
+    setShowAuthorMenu(false)
+    setSlashState(null)
+    setSelectionState(null)
+    setFocusedField(null)
+    setMode('review')
+    setPublished(false)
+    setChecks({ grammar: 'running', tone: 'idle', clarity: 'idle' })
+    setTimeout(() => setChecks(c => ({ ...c, grammar: 'pass', tone: 'running' })),  900)
+    setTimeout(() => setChecks(c => ({ ...c, tone: 'pass',    clarity: 'running' })), 1800)
+    setTimeout(() => setChecks(c => ({ ...c, clarity: 'pass' })),                     2700)
+  }
+  function backToEdit() {
+    setMode('edit')
+    setChecks({ grammar: 'idle', tone: 'idle', clarity: 'idle' })
+    setPublished(false)
+  }
+  const allChecksPassed = checks.grammar === 'pass' && checks.tone === 'pass' && checks.clarity === 'pass'
   const fileInputRef = useRef<HTMLInputElement>(null)
   const typeMenuRef = useRef<HTMLDivElement>(null)
   const authorMenuRef = useRef<HTMLDivElement>(null)
@@ -1057,28 +1087,60 @@ function NewsEditor({
           </h1>
         </div>
         <div className="flex items-center gap-2">
-          <button className="flex items-center gap-1.5 px-4 py-2.5 rounded-[12px] hover:bg-slate-100 transition-colors">
-            <span className="text-[14px] font-medium leading-5 text-slate-800 whitespace-nowrap" style={{ fontFamily: 'var(--font-inter)' }}>
-              Save as Draft
-            </span>
-          </button>
-          <button className="flex items-center gap-1.5 px-4 py-2.5 rounded-[12px] bg-white border border-slate-200 shadow-[0px_1px_0.25px_rgba(29,41,61,0.02)] hover:bg-slate-50 transition-colors">
-            <span className="text-[14px] font-medium leading-5 text-slate-800 whitespace-nowrap" style={{ fontFamily: 'var(--font-inter)' }}>
-              Preview
-            </span>
-          </button>
-          <button className="relative flex items-center gap-1.5 px-4 py-2.5 rounded-[12px] overflow-hidden">
-            <div className="absolute inset-0 bg-[#0787ff] rounded-[12px]" />
-            <div className="absolute inset-0 rounded-[12px] shadow-[inset_0px_0px_4px_0px_rgba(255,255,255,0.64)]" />
-            <span className="relative text-[14px] font-medium leading-5 text-white whitespace-nowrap" style={{ fontFamily: 'var(--font-inter)' }}>
-              Continue to review
-            </span>
-          </button>
+          {mode === 'edit' ? (
+            <>
+              <button className="flex items-center gap-1.5 px-4 py-2.5 rounded-[12px] hover:bg-slate-100 transition-colors">
+                <span className="text-[14px] font-medium leading-5 text-slate-800 whitespace-nowrap" style={{ fontFamily: 'var(--font-inter)' }}>
+                  Save as Draft
+                </span>
+              </button>
+              <button className="flex items-center gap-1.5 px-4 py-2.5 rounded-[12px] bg-white border border-slate-200 shadow-[0px_1px_0.25px_rgba(29,41,61,0.02)] hover:bg-slate-50 transition-colors">
+                <span className="text-[14px] font-medium leading-5 text-slate-800 whitespace-nowrap" style={{ fontFamily: 'var(--font-inter)' }}>
+                  Preview
+                </span>
+              </button>
+              <button onClick={enterReview} className="relative flex items-center gap-1.5 px-4 py-2.5 rounded-[12px] overflow-hidden hover:brightness-110 transition-[filter]">
+                <div className="absolute inset-0 bg-[#0787ff] rounded-[12px]" />
+                <div className="absolute inset-0 rounded-[12px] shadow-[inset_0px_0px_4px_0px_rgba(255,255,255,0.64)]" />
+                <span className="relative text-[14px] font-medium leading-5 text-white whitespace-nowrap" style={{ fontFamily: 'var(--font-inter)' }}>
+                  Continue to review
+                </span>
+              </button>
+            </>
+          ) : (
+            <>
+              <span className="text-[12px] text-slate-500 mr-2" style={{ fontFamily: 'var(--font-inter)' }}>
+                Review mode
+              </span>
+              <button
+                onClick={backToEdit}
+                className="flex items-center gap-1.5 px-4 py-2.5 rounded-[12px] bg-white border border-slate-200 shadow-[0px_1px_0.25px_rgba(29,41,61,0.02)] hover:bg-slate-50 transition-colors"
+              >
+                <span className="text-[14px] font-medium leading-5 text-slate-800 whitespace-nowrap" style={{ fontFamily: 'var(--font-inter)' }}>
+                  Back to edit
+                </span>
+              </button>
+            </>
+          )}
         </div>
       </div>
 
-      {/* Scrollable content */}
-      <div className="flex flex-col gap-6 p-8 overflow-y-auto flex-1">
+      {/* Slim review strip — sits below header in review mode */}
+      {mode === 'review' && (
+        <ReviewStrip
+          criticalCount={REVIEW_DATA.critical}
+          suggestionCount={REVIEW_DATA.suggestions}
+          fixTime={REVIEW_DATA.fixTime}
+        />
+      )}
+
+      {/* Horizontal split: article ⟷ optional review side panel */}
+      <div className="flex flex-1 min-h-0">
+
+      {/* Scrollable article content — stays visible in review mode */}
+      <div className="flex flex-col gap-6 p-8 overflow-y-auto flex-1 min-w-0">
+
+        <div className="flex flex-col gap-6">
 
         {/* Title */}
         <div className="flex flex-col gap-3 w-full">
@@ -1178,6 +1240,19 @@ function NewsEditor({
             )}
           </div>
         </div>
+
+        {/* Inline review — headline improvement (anchored under title) */}
+        {mode === 'review' && (
+          <IssueCard
+            tone="suggestion"
+            eyebrow="Headline"
+            title="Headline could be stronger"
+            body="More specific framing tends to lift open-rates on policy stories."
+            suggestion="Government Unveils Import Reform Policy Affecting Small Businesses"
+            primary={{ label: 'Apply' }}
+            secondary={{ label: 'Dismiss' }}
+          />
+        )}
 
         {/* Metadata rows */}
         <div className="flex flex-col gap-0.5 w-full">
@@ -1547,6 +1622,28 @@ function NewsEditor({
             </button>
           </div>
 
+          {/* Inline review — body-level issues (critical first) */}
+          {mode === 'review' && (
+            <div className="flex flex-col gap-2.5 w-full">
+              <IssueCard
+                tone="critical"
+                eyebrow="Source verification"
+                title="Unsupported claim"
+                body='"The policy will impact over 50,000 workers." — this statement could not be linked to a source.'
+                primary={{ label: 'Link Source' }}
+                secondary={{ label: 'Ignore' }}
+              />
+              <IssueCard
+                tone="suggestion"
+                eyebrow="Attribution"
+                title="Missing attribution"
+                body="A quote was detected but no speaker is identified."
+                primary={{ label: 'Add Source' }}
+                secondary={{ label: 'Ignore' }}
+              />
+            </div>
+          )}
+
           {sections.length === 0 ? (
             // Initial state — Figma ContentBlock Default (2293:5210). Clicking
             // the empty placeholder opens the section picker anchored beneath.
@@ -1594,6 +1691,339 @@ function NewsEditor({
             </span>
           </button>
         )}
+        </div>
+      </div>
+
+      {/* Sticky right-side review panel (only in review mode) */}
+      {mode === 'review' && (
+        <ReviewSidePanel
+          readiness={REVIEW_DATA.readiness}
+          critical={REVIEW_DATA.critical}
+          suggestions={REVIEW_DATA.suggestions}
+          fixTime={REVIEW_DATA.fixTime}
+        />
+      )}
+
+      </div>
+
+      {/* Sticky bottom action bar (only in review mode) */}
+      {mode === 'review' && (
+        <ReviewFooter
+          critical={REVIEW_DATA.critical}
+          published={published}
+          onSaveDraft={() => { /* hook up */ }}
+          onPreview={() => { /* hook up */ }}
+          onContinueToApproval={() => setPublished(true)}
+        />
+      )}
+    </div>
+  )
+}
+
+// ── Inline editorial review primitives ────────────────────────────────────────
+// Static demo data — production wiring would derive these from a review pipeline.
+const REVIEW_DATA = {
+  readiness:   92,
+  critical:    1,
+  suggestions: 2,
+  fixTime:     '2 min',
+} as const
+
+function ReviewStrip({
+  criticalCount, suggestionCount, fixTime,
+}: {
+  criticalCount: number
+  suggestionCount: number
+  fixTime: string
+}) {
+  return (
+    <div className="shrink-0 px-8 py-3 border-b border-slate-200 bg-[#fafafa]">
+      <div className="flex items-center gap-6">
+        <div className="flex items-center gap-2">
+          <span className="text-[10.5px] font-medium uppercase tracking-[0.16em] text-slate-400">
+            Review Results
+          </span>
+        </div>
+        <div className="h-3.5 w-px bg-slate-200" />
+        <button className="group inline-flex items-center gap-2 transition-colors hover:text-slate-900">
+          <span className="size-[7px] rounded-full bg-rose-500" />
+          <span className="text-[13px] text-slate-700 group-hover:text-slate-900">
+            <span className="font-semibold tabular-nums text-slate-900">{criticalCount}</span> Critical {criticalCount === 1 ? 'Issue' : 'Issues'}
+          </span>
+        </button>
+        <button className="group inline-flex items-center gap-2 transition-colors">
+          <span className="size-[7px] rounded-full bg-amber-400" />
+          <span className="text-[13px] text-slate-700 group-hover:text-slate-900">
+            <span className="font-semibold tabular-nums text-slate-900">{suggestionCount}</span> Suggestions
+          </span>
+        </button>
+        <div className="inline-flex items-center gap-2">
+          <span className="size-[7px] rounded-full bg-emerald-500" />
+          <span className="text-[13px] text-slate-700">
+            Ready in <span className="font-semibold text-slate-900">~{fixTime}</span>
+          </span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ReviewSidePanel({
+  readiness, critical, suggestions, fixTime,
+}: {
+  readiness: number
+  critical: number
+  suggestions: number
+  fixTime: string
+}) {
+  // Inset panel — sits as a clean right column inside the editor card. Left
+  // hairline divider mirrors the divider between Sources and the editor body.
+  return (
+    <aside className="shrink-0 w-[300px] border-l border-[#e2e8f0] bg-white flex flex-col overflow-hidden">
+      {/* Header row — matches the editor's primary header height (62px) */}
+      <div className="border-[#e2e8f0] border-b border-solid flex items-center gap-[6px] h-[62px] px-[20px] shrink-0">
+        <p
+          className="flex-1 min-w-0 text-[16px] font-medium leading-6 text-[#262626]"
+          style={{ fontFamily: 'var(--font-inter)' }}
+        >
+          Review
+        </p>
+        <span
+          className="text-[12px] font-medium leading-[14px] uppercase text-[#4d4d56]"
+          style={{ fontFamily: 'var(--font-inter)' }}
+        >
+          {readiness}% ready
+        </span>
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-[20px] py-[24px] flex flex-col gap-[28px]">
+        {/* Readiness — calm centered ring */}
+        <div className="flex flex-col items-center gap-[14px]">
+          <ReadinessRing value={readiness} />
+          <div className="flex flex-col items-center gap-1 text-center">
+            <p
+              className="text-[14px] font-medium leading-[1.3] text-[#171717]"
+              style={{ fontFamily: 'var(--font-dm-sans)', fontVariationSettings: '"opsz" 14' }}
+            >
+              {critical === 0 ? 'Ready to publish' : 'Almost there'}
+            </p>
+            <p className="text-[12px] leading-[1.5] text-[#737373]" style={{ fontFamily: 'var(--font-inter)' }}>
+              {critical === 0
+                ? 'No critical issues remain.'
+                : `Resolve ${critical} critical ${critical === 1 ? 'issue' : 'issues'} to continue.`}
+            </p>
+          </div>
+        </div>
+
+        {/* Eyebrow + metric rows — match field-row pattern */}
+        <div className="flex flex-col">
+          <span
+            className="text-[12px] font-medium leading-[14px] uppercase text-[#4d4d56] mb-[4px]"
+            style={{ fontFamily: 'var(--font-inter)' }}
+          >
+            Summary
+          </span>
+          <PanelMetric label="Critical Issues"    value={String(critical)}    tone={critical > 0 ? 'rose' : 'slate'} />
+          <PanelMetric label="Suggestions"        value={String(suggestions)} tone={suggestions > 0 ? 'amber' : 'slate'} />
+          <PanelMetric label="Estimated Fix Time" value={fixTime}             tone="slate" last />
+        </div>
+      </div>
+    </aside>
+  )
+}
+
+function PanelMetric({ label, value, tone, last }: { label: string; value: string; tone: 'rose' | 'amber' | 'slate'; last?: boolean }) {
+  const dot =
+    tone === 'rose'  ? 'bg-rose-500' :
+    tone === 'amber' ? 'bg-amber-400' :
+                       'bg-slate-300'
+  return (
+    <div className={`flex items-center justify-between py-[12px] ${last ? '' : 'border-b border-[#f1f1f3]'}`}>
+      <div className="flex items-center gap-2">
+        <span className={`size-[6px] rounded-full ${dot}`} />
+        <span
+          className="text-[12px] font-medium leading-[14px] uppercase text-[#4d4d56]"
+          style={{ fontFamily: 'var(--font-inter)' }}
+        >
+          {label}
+        </span>
+      </div>
+      <span
+        className="text-[14px] font-medium leading-[1.3] text-[#171717] tabular-nums"
+        style={{ fontFamily: 'var(--font-dm-sans)', fontVariationSettings: '"opsz" 14' }}
+      >
+        {value}
+      </span>
+    </div>
+  )
+}
+
+function ReadinessRing({ value }: { value: number }) {
+  const size = 56
+  const stroke = 5
+  const r = (size - stroke) / 2
+  const c = 2 * Math.PI * r
+  const offset = c - (value / 100) * c
+  const tone =
+    value >= 95 ? '#10b981' :
+    value >= 80 ? '#0f172a' :
+    value >= 60 ? '#f59e0b' : '#ef4444'
+  return (
+    <div className="relative shrink-0" style={{ width: size, height: size }}>
+      <svg width={size} height={size} className="-rotate-90">
+        <circle cx={size/2} cy={size/2} r={r} stroke="#e2e8f0" strokeWidth={stroke} fill="none" />
+        <circle
+          cx={size/2} cy={size/2} r={r}
+          stroke={tone} strokeWidth={stroke} fill="none"
+          strokeDasharray={c} strokeDashoffset={offset} strokeLinecap="round"
+          style={{ transition: 'stroke-dashoffset 700ms cubic-bezier(0.22,1,0.36,1)' }}
+        />
+      </svg>
+    </div>
+  )
+}
+
+function ReviewFooter({
+  critical, published, onSaveDraft, onPreview, onContinueToApproval,
+}: {
+  critical: number
+  published: boolean
+  onSaveDraft: () => void
+  onPreview: () => void
+  onContinueToApproval: () => void
+}) {
+  const blocked = critical > 0 && !published
+  return (
+    <div className="shrink-0 border-t border-slate-200 bg-white">
+      <div className="px-8 h-[60px] flex items-center justify-between gap-4">
+        <button
+          onClick={onSaveDraft}
+          className="text-[13px] font-medium text-slate-600 hover:text-slate-900 transition-colors"
+          style={{ fontFamily: 'var(--font-inter)' }}
+        >
+          Save Draft
+        </button>
+
+        <div className="flex items-center gap-2">
+          <span className={`size-[7px] rounded-full ${blocked ? 'bg-rose-500' : 'bg-emerald-500'}`} />
+          <span className="text-[12.5px] text-slate-500">
+            {published
+              ? 'Sent to approval'
+              : blocked
+                ? `Resolve ${critical} critical ${critical === 1 ? 'issue' : 'issues'} to continue`
+                : 'Review complete'}
+          </span>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={onPreview}
+            className="px-3.5 py-2 rounded-[10px] bg-white border border-slate-200 text-[13px] font-medium text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition-colors"
+            style={{ fontFamily: 'var(--font-inter)' }}
+          >
+            Preview Article
+          </button>
+          <button
+            onClick={onContinueToApproval}
+            disabled={blocked}
+            className="relative px-4 py-2 rounded-[10px] overflow-hidden transition-[filter,opacity] disabled:opacity-50 disabled:cursor-not-allowed enabled:hover:brightness-110"
+          >
+            <div className="absolute inset-0 bg-[#0f172a] rounded-[10px]" />
+            <div className="absolute inset-0 rounded-[10px] shadow-[inset_0_1px_0_rgba(255,255,255,0.18)]" />
+            <span className="relative text-[13px] font-semibold text-white tracking-[-0.005em]" style={{ fontFamily: 'var(--font-inter)' }}>
+              {published ? 'Continued ✓' : 'Continue to Approval'}
+            </span>
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Inline issue cards ────────────────────────────────────────────────────────
+// Anchored to specific spots in the article. Lightweight, editorial tone.
+
+type IssueTone = 'critical' | 'suggestion'
+
+function IssueCard({
+  tone, eyebrow, title, body, primary, secondary, suggestion,
+}: {
+  tone: IssueTone
+  eyebrow: string
+  title: string
+  body?: string
+  suggestion?: string
+  primary: { label: string; onClick?: () => void }
+  secondary: { label: string; onClick?: () => void }
+}) {
+  // Matches the editor's field-row aesthetic: uppercase eyebrow + value + helper,
+  // hairline border below. A small tonal dot signals critical vs suggestion.
+  const dot = tone === 'critical' ? 'bg-rose-500' : 'bg-amber-400'
+  return (
+    <div
+      className="border-[#e4e4e7] border-b border-solid flex flex-col gap-2 pb-4 w-full"
+      style={{ fontFamily: 'var(--font-inter)' }}
+    >
+      {/* Eyebrow row — matches HEADLINE / SYNOPSIS / COVER IMAGE */}
+      <div className="flex items-center gap-2">
+        <span className={`size-[6px] rounded-full ${dot}`} />
+        <span
+          className="text-[12px] font-medium leading-[14px] uppercase text-[#4d4d56]"
+          style={{ fontFamily: 'var(--font-inter)' }}
+        >
+          {eyebrow}
+        </span>
+      </div>
+
+      {/* Title — DM Sans 16px, neutral-800, matches body type */}
+      <p
+        className="text-[16px] leading-[1.5] text-[#262626]"
+        style={{ fontFamily: 'var(--font-dm-sans)', fontVariationSettings: '"opsz" 14' }}
+      >
+        {title}
+      </p>
+
+      {/* Helper — mini 12px, neutral-500, matches the Headline helper row */}
+      {body && (
+        <p className="text-[12px] leading-[14px] text-[#737373]" style={{ fontFamily: 'var(--font-inter)' }}>
+          {body}
+        </p>
+      )}
+
+      {/* Suggested value — inline block, no boxed background, hairline divider above */}
+      {suggestion && (
+        <div className="mt-1 flex flex-col gap-1.5 pt-3 border-t border-[#f1f1f3]">
+          <span className="text-[12px] font-medium leading-[14px] uppercase text-[#4d4d56]">
+            Suggested
+          </span>
+          <p
+            className="text-[16px] leading-[1.5] text-[#0f172a]"
+            style={{ fontFamily: 'var(--font-dm-sans)', fontVariationSettings: '"opsz" 14' }}
+          >
+            {suggestion}
+          </p>
+        </div>
+      )}
+
+      {/* Actions — quiet text buttons, blue primary matches Continue to review */}
+      <div className="flex items-center gap-1 mt-1">
+        <button
+          onClick={primary.onClick}
+          className="relative inline-flex items-center justify-center min-h-[28px] px-3 py-1 rounded-[8px] overflow-hidden transition-[filter] hover:brightness-110"
+        >
+          <span aria-hidden className="absolute inset-0 bg-[#0787ff] rounded-[8px]" />
+          <span aria-hidden className="absolute inset-0 pointer-events-none rounded-[8px] shadow-[inset_0px_0px_4px_0px_rgba(255,255,255,0.24)]" />
+          <span className="relative text-[12.5px] font-medium leading-5 text-white" style={{ fontFamily: 'var(--font-inter)' }}>
+            {primary.label}
+          </span>
+        </button>
+        <button
+          onClick={secondary.onClick}
+          className="inline-flex items-center justify-center min-h-[28px] px-3 py-1 rounded-[8px] text-[12.5px] font-medium leading-5 text-[#334155] hover:bg-slate-100 transition-colors"
+          style={{ fontFamily: 'var(--font-inter)' }}
+        >
+          {secondary.label}
+        </button>
       </div>
     </div>
   )

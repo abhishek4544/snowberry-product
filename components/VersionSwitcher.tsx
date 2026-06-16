@@ -1,54 +1,55 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import { useRouter, usePathname } from 'next/navigation'
 
+/* ─── Version registry ─────────────────────────────────────────────────────────
+   Hardcoded route map. Each version is a real, navigable build of the app.
+   Adding a new version = add a row here. No "push" — versions are checked in
+   with the code.
+   ────────────────────────────────────────────────────────────────────────── */
 type Version = {
-  id: string
-  label: string
-  tag: string
-  note: string
-  date: string
-  current?: boolean
+  id:    string         // stable key
+  label: string         // "v1", "v2", …
+  tag:   string         // short descriptor shown as colored chip
+  note:  string         // one-line description
+  date:  string         // when this version was added
+  route: string         // route this version represents
+  match?: (pathname: string) => boolean  // optional override for "is current"
 }
 
-const INITIAL_VERSIONS: Version[] = [
-  { id: 'v1', label: 'v1', tag: 'Initial',     note: 'Dashboard + basic layout',         date: 'Jun 1, 2026' },
-  { id: 'v2', label: 'v2', tag: 'News flow',   note: 'Add source panel + linked sources', date: 'Jun 5, 2026' },
-  { id: 'v3', label: 'v3', tag: 'Performance', note: 'Performance page + Massive AI',     date: 'Jun 9, 2026', current: true },
+const VERSIONS: Version[] = [
+  { id: 'v1', label: 'v1', tag: 'Dashboard',  note: 'Initial dashboard + sidebar', date: 'Jun 1, 2026',  route: '/' },
+  { id: 'v2', label: 'v2', tag: 'News list',  note: 'News index page',             date: 'Jun 5, 2026',  route: '/news' },
+  { id: 'v3', label: 'v3', tag: 'Creation',   note: 'News creation flow (legacy)', date: 'Jun 9, 2026',  route: '/news/new' },
+  { id: 'v4', label: 'v4', tag: 'New design', note: 'News creation v4',            date: 'Jun 15, 2026', route: '/news/new-v4' },
+  { id: 'v5', label: 'v5', tag: 'Berry AI',   note: 'AI-first vibrant theme',      date: 'Jun 15, 2026', route: '/news/new-v5' },
 ]
 
-const STORAGE_KEY = 'snowberry_versions'
-const ACTIVE_KEY  = 'snowberry_active_version'
-
-function loadVersions(): Version[] {
-  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? 'null') ?? INITIAL_VERSIONS }
-  catch { return INITIAL_VERSIONS }
-}
-
-function saveVersions(v: Version[]) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(v))
-}
-
 const TAG_COLORS: Record<string, string> = {
-  Initial:     '#737373',
-  'News flow': '#8B5CF6',
-  Performance: '#0787ff',
-  New:         '#16a34a',
+  Dashboard:    '#737373',
+  'News list':  '#8B5CF6',
+  Creation:     '#0787ff',
+  'New design': '#16a34a',
+  'Berry AI':   '#7c3aed',
+}
+
+/** Pick the version whose route best matches the current pathname.
+ *  Longest-prefix match wins so /news/new-v4 picks v4 and not v3.  */
+function pickActive(pathname: string): Version {
+  const matches = VERSIONS
+    .filter(v => v.match ? v.match(pathname) : pathname === v.route || pathname.startsWith(v.route + '/'))
+    .sort((a, b) => b.route.length - a.route.length)
+  return matches[0] ?? VERSIONS[VERSIONS.length - 1]
 }
 
 export default function VersionSwitcher() {
-  const [versions, setVersions] = useState<Version[]>(INITIAL_VERSIONS)
-  const [activeId, setActiveId] = useState<string>('v3')
-  const [open, setOpen]         = useState(false)
-  const [pushing, setPushing]   = useState(false)
-  const [pushed, setPushed]     = useState(false)
+  const router   = useRouter()
+  const pathname = usePathname()
+  const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
-  useEffect(() => {
-    const v = loadVersions()
-    setVersions(v)
-    setActiveId(localStorage.getItem(ACTIVE_KEY) ?? (v.find(x => x.current)?.id ?? v[v.length - 1].id))
-  }, [])
+  const active = pickActive(pathname)
 
   // Close on outside click
   useEffect(() => {
@@ -59,70 +60,52 @@ export default function VersionSwitcher() {
     return () => document.removeEventListener('mousedown', onDown)
   }, [])
 
-  const active = versions.find(v => v.id === activeId) ?? versions[versions.length - 1]
+  // Keyboard shortcut: ⌘+[ / ⌘+] cycles versions
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (!(e.metaKey || e.ctrlKey)) return
+      if (e.key !== '[' && e.key !== ']') return
+      const i = VERSIONS.findIndex(v => v.id === active.id)
+      const next = e.key === ']'
+        ? VERSIONS[(i + 1) % VERSIONS.length]
+        : VERSIONS[(i - 1 + VERSIONS.length) % VERSIONS.length]
+      router.push(next.route)
+      e.preventDefault()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [active.id, router])
 
-  function switchTo(id: string) {
-    setActiveId(id)
-    localStorage.setItem(ACTIVE_KEY, id)
+  function switchTo(v: Version) {
+    router.push(v.route)
     setOpen(false)
   }
 
-  function pushNext() {
-    setPushing(true)
-    setTimeout(() => {
-      const next = versions.length + 1
-      const id   = `v${next}`
-      const today = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-      const updated: Version[] = [
-        ...versions.map(v => ({ ...v, current: false })),
-        { id, label: `v${next}`, tag: 'New', note: 'Pushed from current build', date: today, current: true },
-      ]
-      setVersions(updated)
-      saveVersions(updated)
-      setActiveId(id)
-      localStorage.setItem(ACTIVE_KEY, id)
-      setPushing(false)
-      setPushed(true)
-      setTimeout(() => setPushed(false), 2200)
-    }, 900)
-  }
-
   return (
-    /* Fixed anchor — bottom-left, always visible */
     <div ref={ref} className="fixed bottom-4 left-4 z-[9999]" style={{ fontFamily: 'var(--font-inter)' }}>
 
       {/* ── Popup panel (opens upward) ── */}
       {open && (
-        <div className="absolute bottom-full left-0 mb-2 w-[248px] bg-white border border-[#e5e5e5] rounded-[14px] shadow-[0px_12px_32px_-6px_rgba(0,0,0,0.18),0px_0px_1px_rgba(0,0,0,0.10)] overflow-hidden">
+        <div className="absolute bottom-full left-0 mb-2 w-[280px] bg-white border border-[#e5e5e5] rounded-[14px] shadow-[0px_12px_32px_-6px_rgba(0,0,0,0.18),0px_0px_1px_rgba(0,0,0,0.10)] overflow-hidden">
 
           {/* Header */}
           <div className="flex items-center justify-between px-3.5 py-2.5 border-b border-[#f0f0f0]">
             <p className="text-[11px] font-semibold text-[#737373] uppercase tracking-wider">
               Build versions
             </p>
-            <button
-              onClick={pushNext}
-              disabled={pushing}
-              className={`flex items-center gap-1 px-2.5 py-1 rounded-[6px] text-[11px] font-semibold transition-all ${
-                pushed   ? 'bg-[#f0fdf4] text-[#16a34a] border border-[#bbf7d0]' :
-                pushing  ? 'bg-[#f5f5f5] text-[#a3a3a3] cursor-not-allowed' :
-                           'bg-[#0787ff] text-white hover:bg-[#0061ff] active:scale-95'
-              }`}
-            >
-              {pushed   ? '✓ Pushed' :
-               pushing  ? <><span className="inline-block animate-spin">↻</span>&nbsp;Pushing…</> :
-                          `↑ Push v${versions.length + 1}`}
-            </button>
+            <span className="text-[10px] font-medium text-[#a3a3a3]">
+              ⌘[ / ⌘]
+            </span>
           </div>
 
           {/* Version list */}
-          <div className="flex flex-col py-1 max-h-[260px] overflow-y-auto">
-            {[...versions].reverse().map((v, idx, arr) => {
-              const isActive = v.id === activeId
+          <div className="flex flex-col py-1 max-h-[320px] overflow-y-auto">
+            {[...VERSIONS].reverse().map((v, idx, arr) => {
+              const isActive = v.id === active.id
               return (
                 <button
                   key={v.id}
-                  onClick={() => switchTo(v.id)}
+                  onClick={() => switchTo(v)}
                   className={`flex items-start gap-2.5 w-full px-3.5 py-2 text-left transition-colors hover:bg-[#fafafa] ${isActive ? 'bg-[#f8faff]' : ''}`}
                 >
                   {/* Timeline line + dot */}
@@ -145,12 +128,12 @@ export default function VersionSwitcher() {
                       >
                         {v.tag}
                       </span>
-                      {v.current && (
+                      {idx === 0 && (
                         <span className="text-[10px] font-medium text-[#16a34a]">latest</span>
                       )}
                     </div>
                     <p className="text-[11px] text-[#737373] mt-0.5 leading-snug">{v.note}</p>
-                    <p className="text-[10px] text-[#b0b0b0] mt-0.5">{v.date}</p>
+                    <p className="text-[10px] text-[#b0b0b0] mt-0.5 font-mono">{v.route}</p>
                   </div>
 
                   {isActive && (
