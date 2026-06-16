@@ -33,7 +33,20 @@ type CheckId =
   | 'grammar' | 'spelling' | 'metadata' | 'formatting' | 'headline'
   | 'cover' | 'duplicate' | 'attribution' | 'source' | 'legal' | 'readiness'
 
-type AutoFix = { id: CheckId; label: string; detail?: string }
+// Each auto-fix carries the actual evidence — so reporters can verify what
+// Berry did, not just trust the headline. `kind: 'pass'` rows describe what
+// Berry *checked* and confirmed; `'replace' | 'add'` rows show before/after.
+type FixChange =
+  | { kind: 'replace'; before: string; after: string; where?: string }
+  | { kind: 'add';     value: string;  where?: string }
+  | { kind: 'pass';    text: string }
+type AutoFix = {
+  id: CheckId
+  label: string
+  detail?: string
+  variant: 'fix' | 'suggestion' | 'pass'
+  changes: FixChange[]
+}
 type Issue   = {
   id: string
   tone: 'critical' | 'suggestion'
@@ -45,15 +58,88 @@ type Issue   = {
 }
 
 // Static demo: what Berry handled automatically + what needs the reporter.
+// Each row has expandable evidence so the reporter can verify the change.
 const AUTO_FIXES: AutoFix[] = [
-  { id: 'grammar',    label: 'Grammar corrected',          detail: '3 small fixes' },
-  { id: 'spelling',   label: 'Spelling corrected',         detail: '1 word' },
-  { id: 'metadata',   label: 'Metadata completed',         detail: 'Category, tags, slug' },
-  { id: 'formatting', label: 'Formatting cleaned',         detail: 'Smart quotes, spacing' },
-  { id: 'headline',   label: 'Headline polish suggested',  detail: 'Optional, in summary' },
-  { id: 'cover',      label: 'Cover image verified' },
-  { id: 'duplicate',  label: 'No duplicate information found' },
-  { id: 'legal',      label: 'No legal risk flagged' },
+  {
+    id: 'grammar',
+    label: 'Grammar corrected',
+    detail: '3 small fixes',
+    variant: 'fix',
+    changes: [
+      { kind: 'replace', where: 'Paragraph 1', before: 'अपेक्षामा थिए तर बिहान',  after: 'अपेक्षामा थिए। तर बिहान' },
+      { kind: 'replace', where: 'Paragraph 2', before: 'workers according to', after: 'workers, according to' },
+      { kind: 'replace', where: 'Paragraph 3', before: 'school जान',             after: 'स्कुल जान' },
+    ],
+  },
+  {
+    id: 'spelling',
+    label: 'Spelling corrected',
+    detail: '1 word',
+    variant: 'fix',
+    changes: [
+      { kind: 'replace', where: 'Paragraph 2', before: 'importrers', after: 'importers' },
+    ],
+  },
+  {
+    id: 'metadata',
+    label: 'Metadata completed',
+    detail: 'Category · tags · slug',
+    variant: 'fix',
+    changes: [
+      { kind: 'add', where: 'Category', value: 'Politics · Policy' },
+      { kind: 'add', where: 'Tags',     value: 'import-reform, small-business, birgunj' },
+      { kind: 'add', where: 'Slug',     value: 'import-reform-policy-small-businesses' },
+    ],
+  },
+  {
+    id: 'formatting',
+    label: 'Formatting cleaned',
+    detail: 'Smart quotes, spacing',
+    variant: 'fix',
+    changes: [
+      { kind: 'replace', where: 'Paragraph 4', before: '"This decision was made',  after: '“This decision was made' },
+      { kind: 'replace', where: 'Body',        before: 'workers ."',               after: 'workers.”' },
+      { kind: 'pass',    text: 'Removed 4 stray double spaces.' },
+    ],
+  },
+  {
+    id: 'headline',
+    label: 'Headline polish suggested',
+    detail: 'Optional — needs your approval',
+    variant: 'suggestion',
+    changes: [
+      {
+        kind: 'replace',
+        where: 'Headline',
+        before: 'व्यवस्थापन फेरबदलले सुकुमवासी होल्डिङ सेन्टरमा सोमबार तनाव, आजदेखि सहज',
+        after:  'सुकुमवासी होल्डिङ सेन्टरमा खाना अभाव — सोमबार तनाव, आजदेखि सहज',
+      },
+    ],
+  },
+  {
+    id: 'cover',
+    label: 'Cover image verified',
+    variant: 'pass',
+    changes: [
+      { kind: 'pass', text: 'Aspect ratio 16:9 · file size 142 KB · alt text present.' },
+    ],
+  },
+  {
+    id: 'duplicate',
+    label: 'No duplicate information found',
+    variant: 'pass',
+    changes: [
+      { kind: 'pass', text: 'Scanned 5 paragraphs against 2 linked sources and prior coverage from the same reporter — no overlapping passages above 70% similarity.' },
+    ],
+  },
+  {
+    id: 'legal',
+    label: 'No legal risk flagged',
+    variant: 'pass',
+    changes: [
+      { kind: 'pass', text: 'No named individuals accused of crime without attribution. No copyrighted long-form quotes detected. No personal identifiers (phone, address, NID) found in body.' },
+    ],
+  },
 ]
 
 const ISSUES: Issue[] = [
@@ -525,25 +611,11 @@ function SummaryOverlay({
               </span>
             </button>
             {expanded && (
-              <ul className="flex flex-col gap-0.5 pl-0.5 berry-fixes-in">
+              <div className="flex flex-col berry-fixes-in">
                 {autoFixes.map(f => (
-                  <li key={f.id} className="flex items-center justify-between gap-3 py-1.5">
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <span className="inline-flex items-center justify-center size-[16px] rounded-full bg-emerald-50 text-emerald-600">
-                        <Check size={10} strokeWidth={2.75} />
-                      </span>
-                      <span className="text-[13px] text-[#0f172a]" style={{ fontFamily: 'var(--font-inter)' }}>
-                        {f.label}
-                      </span>
-                    </div>
-                    {f.detail && (
-                      <span className="text-[11.5px] text-slate-400 truncate" style={{ fontFamily: 'var(--font-inter)' }}>
-                        {f.detail}
-                      </span>
-                    )}
-                  </li>
+                  <AutoFixRow key={f.id} fix={f} />
                 ))}
-              </ul>
+              </div>
             )}
             {!expanded && resolvedCount > 0 && (
               <p className="text-[12px] text-slate-500" style={{ fontFamily: 'var(--font-inter)' }}>
@@ -633,6 +705,143 @@ function IssueAction({ issue, onJump }: { issue: Issue; onJump: () => void }) {
           {issue.action}
           <ArrowRight size={12} strokeWidth={2.25} />
         </button>
+      </div>
+    </div>
+  )
+}
+
+/* ───────────────────────────────────────────────────────────────────────────
+   AutoFixRow — collapsible row showing before/after evidence for each check
+   ─────────────────────────────────────────────────────────────────────────── */
+
+function AutoFixRow({ fix }: { fix: AutoFix }) {
+  const [open, setOpen] = useState(false)
+
+  const iconClasses =
+    fix.variant === 'fix'        ? 'bg-[#0787ff]/10 text-[#0787ff]' :
+    fix.variant === 'suggestion' ? 'bg-amber-50 text-amber-600' :
+                                   'bg-emerald-50 text-emerald-600'
+
+  const tagText  =
+    fix.variant === 'fix'        ? 'Fixed' :
+    fix.variant === 'suggestion' ? 'Suggested' :
+                                   'OK'
+  const tagClasses =
+    fix.variant === 'fix'        ? 'text-[#0787ff]' :
+    fix.variant === 'suggestion' ? 'text-amber-600' :
+                                   'text-emerald-600'
+
+  return (
+    <div className="border-b border-slate-100 last:border-none">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        aria-expanded={open}
+        className="flex items-center w-full gap-3 py-2 text-left hover:bg-slate-50/60 rounded-[8px] px-1.5 -mx-1.5 transition-colors"
+      >
+        <span className={`inline-flex items-center justify-center size-[18px] rounded-full ${iconClasses}`}>
+          <Check size={10} strokeWidth={3} />
+        </span>
+        <span className="flex-1 min-w-0">
+          <span className="text-[13px] text-[#0f172a]" style={{ fontFamily: 'var(--font-inter)' }}>
+            {fix.label}
+          </span>
+          {fix.detail && (
+            <span className="ml-2 text-[11.5px] text-slate-400" style={{ fontFamily: 'var(--font-inter)' }}>
+              {fix.detail}
+            </span>
+          )}
+        </span>
+        <span
+          className={`text-[10.5px] font-semibold uppercase tracking-[0.14em] ${tagClasses}`}
+          style={{ fontFamily: 'var(--font-inter)' }}
+        >
+          {tagText}
+        </span>
+        <ChevronRight
+          size={13}
+          strokeWidth={2}
+          className={`text-slate-400 transition-transform ${open ? 'rotate-90' : ''}`}
+        />
+      </button>
+
+      {open && (
+        <div className="pl-[30px] pr-1.5 py-2 flex flex-col gap-2 fix-evidence-in">
+          {fix.changes.map((c, i) => (
+            <ChangeBlock key={i} change={c} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ChangeBlock({ change }: { change: FixChange }) {
+  if (change.kind === 'pass') {
+    return (
+      <div className="rounded-[10px] bg-slate-50/70 border border-slate-100 px-3 py-2">
+        <p className="text-[12.5px] leading-[1.5] text-slate-600" style={{ fontFamily: 'var(--font-inter)' }}>
+          {change.text}
+        </p>
+      </div>
+    )
+  }
+
+  if (change.kind === 'add') {
+    return (
+      <div className="rounded-[10px] border border-slate-100 overflow-hidden">
+        {change.where && (
+          <div className="px-3 pt-2 pb-1">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400" style={{ fontFamily: 'var(--font-inter)' }}>
+              {change.where}
+            </span>
+          </div>
+        )}
+        <div className="px-3 pb-2 flex items-start gap-2">
+          <span className="inline-flex items-center justify-center size-[16px] rounded-full bg-emerald-100 text-emerald-700 mt-0.5">
+            <Plus size={10} strokeWidth={3} />
+          </span>
+          <p
+            className="flex-1 text-[13px] leading-[1.45] text-[#0f172a]"
+            style={{ fontFamily: 'var(--font-inter)' }}
+          >
+            {change.value}
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  // 'replace'
+  return (
+    <div className="rounded-[10px] border border-slate-100 overflow-hidden">
+      {change.where && (
+        <div className="px-3 pt-2 pb-1">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400" style={{ fontFamily: 'var(--font-inter)' }}>
+            {change.where}
+          </span>
+        </div>
+      )}
+      <div className="grid grid-cols-[1fr_auto_1fr] gap-2 px-3 pb-2 items-stretch">
+        <div className="rounded-[8px] bg-rose-50/70 border border-rose-100 px-2.5 py-1.5">
+          <p
+            className="text-[12.5px] leading-[1.5] text-rose-900/80 line-through decoration-rose-300"
+            style={{ fontFamily: 'var(--font-inter)' }}
+          >
+            {change.before}
+          </p>
+        </div>
+        <div className="flex items-center justify-center text-slate-300">
+          <ArrowRight size={12} strokeWidth={2} />
+        </div>
+        <div className="rounded-[8px] bg-emerald-50/70 border border-emerald-100 px-2.5 py-1.5">
+          <p
+            className="text-[12.5px] leading-[1.5] text-emerald-900"
+            style={{ fontFamily: 'var(--font-inter)' }}
+          >
+            {change.after}
+          </p>
+        </div>
       </div>
     </div>
   )
@@ -998,6 +1207,12 @@ function V6Styles() {
         to   { opacity: 1; transform: translateY(0); }
       }
       .berry-fixes-in { animation: berry-fixes-in 200ms ease-out both; }
+
+      @keyframes fix-evidence-in {
+        from { opacity: 0; transform: translateY(-3px); }
+        to   { opacity: 1; transform: translateY(0); }
+      }
+      .fix-evidence-in { animation: fix-evidence-in 180ms ease-out both; }
 
       @keyframes fix-in {
         from { opacity: 0; transform: translateY(-4px); }
