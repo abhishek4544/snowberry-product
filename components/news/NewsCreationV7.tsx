@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * NewsCreationV6 — Publish Readiness Check.
+ * NewsCreationV7 — Publish Readiness Check.
  *
  * Reporters write. The system handles everything it can. When they click
  * "Continue to review" the AI runs checks in a brief overlay, fixes anything
@@ -208,7 +208,7 @@ const RUNNING_CHECKS: { id: CheckId | 'spelling-x' | 'source-x' | 'attribution-x
 
 type Mode = 'edit' | 'reviewing' | 'summary' | 'fixing'
 
-export default function NewsCreationV6() {
+export default function NewsCreationV7() {
   const router = useRouter()
 
   const [mode, setMode] = useState<Mode>('edit')
