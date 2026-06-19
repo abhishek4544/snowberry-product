@@ -23,7 +23,7 @@ import {
   Plus, FileText, Image as ImageIcon, Quote, Type, Heading1, Heading2,
   List, Link2, Sparkles, X, LayoutDashboard, Newspaper,
   FilePen, Layers, ListChecks, Folder, BarChart3, Image as MediaIcon,
-  Users, Wrench, Settings, Pin, ChevronUp, ListFilter, Clock, Tag,
+  Users, Wrench, Settings, Pin, ListFilter, Clock, Tag,
 } from 'lucide-react'
 
 /* ───────────────────────────────────────────────────────────────────────────
@@ -184,7 +184,7 @@ export default function NewsCreationV11() {
             <h1 className="text-[17px] font-semibold leading-6 text-[#0f172a] tracking-tight truncate">
               New news
             </h1>
-            <span className="inline-flex items-center gap-1 px-2 py-[3px] rounded-full bg-[#FFE94A] text-[#1a1a1a] text-[10.5px] font-bold uppercase tracking-[0.12em] leading-none">
+            <span className="inline-flex items-center gap-1 px-2 py-[3px] rounded-full bg-[#FED7AA] text-[#9A3412] text-[10.5px] font-bold uppercase tracking-[0.12em] leading-none">
               Draft
             </span>
           </div>
@@ -236,7 +236,7 @@ export default function NewsCreationV11() {
         {/* Body */}
         {mode === 'editing' && (
           <article className="flex-1 min-w-0 overflow-y-auto">
-            <div className="mx-auto max-w-[760px] px-8 py-6 flex flex-col gap-2">
+            <div className="max-w-[820px] pl-12 pr-8 py-6 flex flex-col gap-2">
               {cards.map(card => (
                 <CardRow
                   key={card.id}
@@ -253,7 +253,7 @@ export default function NewsCreationV11() {
               <button
                 type="button"
                 onClick={() => setBlockPickerOpen(true)}
-                className="mt-3 self-start inline-flex items-center gap-2 h-11 px-5 rounded-[14px] bg-white border border-dashed border-[#cfd9e8] text-[#475569] text-[13.5px] font-semibold tracking-tight hover:border-[#F04B2A] hover:text-[#F04B2A] hover:bg-[#fff7f4] transition-colors"
+                className="mt-3 self-start inline-flex items-center gap-2 h-11 px-5 rounded-[14px] bg-white border border-dashed border-[#cfd9e8] text-[#475569] text-[13.5px] font-semibold tracking-tight hover:border-[#0787FF] hover:text-[#0787FF] hover:bg-[#eff6ff] transition-colors"
               >
                 <Plus size={15} strokeWidth={2.25} /> Add new card
               </button>
@@ -341,155 +341,115 @@ export default function NewsCreationV11() {
    ─────────────────────────────────────────────────────────────────────────── */
 
 function Sidebar() {
-  const [contentOpen, setContentOpen] = useState(true)
-  const [siteOpen, setSiteOpen] = useState(false)
-  const [engagementOpen, setEngagementOpen] = useState(false)
-
+  const [expanded, setExpanded] = useState(false)
+  const items: { Icon: typeof LayoutDashboard; label: string }[] = [
+    { Icon: LayoutDashboard, label: 'Dashboard' },
+    { Icon: Newspaper,       label: 'News' },
+    { Icon: FilePen,         label: 'Drafts' },
+    { Icon: ListFilter,      label: 'Category' },
+    { Icon: Layers,          label: 'Series' },
+    { Icon: Folder,          label: 'Archived' },
+    { Icon: ListChecks,      label: 'Tasks' },
+    { Icon: BarChart3,       label: 'Performance' },
+    { Icon: MediaIcon,       label: 'Media' },
+    { Icon: Users,           label: 'People' },
+  ]
+  const footer: { Icon: typeof Wrench; label: string }[] = [
+    { Icon: Wrench,   label: 'Site config' },
+    { Icon: Settings, label: 'Settings' },
+  ]
   return (
-    <nav className="shrink-0 mt-[14px] mb-[14px] ml-[14px] mr-[14px] w-[244px] bg-white border border-[#e6ecf4] rounded-[20px] shadow-[0px_24px_60px_-20px_rgba(31,57,99,0.10),0px_2px_6px_-2px_rgba(31,57,99,0.04)] flex flex-col overflow-hidden">
-
-      {/* Brand */}
-      <div className="px-5 pt-5 pb-3 flex items-center gap-2">
-        <span className="text-[22px] font-extrabold tracking-[-0.03em] text-[#0f172a] leading-none">
-          snowberry
+    <nav
+      className={`shrink-0 mt-[14px] mb-[14px] ml-[14px] mr-[14px] bg-white border border-[#e6ecf4] rounded-[20px] shadow-[0px_24px_60px_-20px_rgba(31,57,99,0.10),0px_2px_6px_-2px_rgba(31,57,99,0.04)] flex flex-col gap-4 ${expanded ? 'items-stretch px-3 py-5' : 'items-center px-3 py-5'} overflow-hidden`}
+      style={{
+        width: expanded ? 224 : 64,
+        transition: 'width 260ms cubic-bezier(0.22,1,0.36,1)',
+      }}
+    >
+      {/* Brand — click to toggle */}
+      <button
+        type="button"
+        onClick={() => setExpanded(v => !v)}
+        className="flex items-center gap-2.5 h-9 rounded-[12px] hover:bg-[#f3f6fb] transition-colors px-1 -mx-1"
+        aria-label={expanded ? 'Collapse sidebar' : 'Expand sidebar'}
+      >
+        <span className="size-9 rounded-[12px] bg-[#0f172a] inline-flex items-center justify-center text-white text-[14px] font-bold tracking-tight shrink-0">
+          S
         </span>
-        <span className="text-[9px] font-bold text-[#94a3b8] -mt-2 leading-none">TM</span>
-      </div>
-
-      {/* + New article */}
-      <div className="px-4 pb-3">
-        <button
-          type="button"
-          className="group relative w-full inline-flex items-center justify-between h-11 px-4 rounded-[14px] bg-[#F04B2A] text-white text-[13.5px] font-semibold tracking-tight shadow-[0_10px_24px_-8px_rgba(240,75,42,0.5),inset_0_1px_0_rgba(255,255,255,0.28)] hover:brightness-105 active:scale-[0.99] transition-[filter,transform]"
-        >
-          <span className="inline-flex items-center gap-2">
-            <Plus size={15} strokeWidth={2.5} /> New article
+        {expanded && (
+          <span
+            className="text-[15px] font-bold tracking-tight text-[#0f172a] whitespace-nowrap v11-side-fade"
+            style={{ fontFamily: 'var(--font-urbanist)' }}
+          >
+            Snowberry
           </span>
-          <ChevronDown size={14} strokeWidth={2.25} className="opacity-80" />
-        </button>
+        )}
+      </button>
+
+      <div className={`h-px bg-[#e6ecf4] ${expanded ? 'w-full' : 'w-8 mx-auto'}`} />
+
+      {/* New article CTA */}
+      <button
+        type="button"
+        className={`group inline-flex items-center gap-2.5 h-9 rounded-[12px] bg-[#0787FF] shadow-[0px_8px_18px_-6px_rgba(7,135,255,0.45)] hover:brightness-105 transition-[filter] ${expanded ? 'justify-start px-2.5' : 'justify-center w-9 self-center'}`}
+      >
+        <Plus size={16} strokeWidth={2.5} className="text-white shrink-0" />
+        {expanded && (
+          <span
+            className="text-[13px] font-semibold text-white tracking-tight v11-side-fade"
+            style={{ fontFamily: 'var(--font-urbanist)' }}
+          >
+            New Article
+          </span>
+        )}
+      </button>
+
+      {/* Main items */}
+      <div className="flex flex-col gap-1">
+        {items.map(({ Icon, label }, i) => (
+          <SideItem key={i} Icon={Icon} label={label} expanded={expanded} active={i === 0} />
+        ))}
       </div>
 
-      {/* Items */}
-      <div className="flex-1 overflow-y-auto px-3 pb-3">
-        <SideItem Icon={LayoutDashboard} label="Dashboard" active />
-
-        <SideGroup
-          Icon={FilePen}
-          label="Content"
-          open={contentOpen}
-          onToggle={() => setContentOpen(v => !v)}
-        >
-          <SideSubItem Icon={Newspaper} label="News" />
-          <SideSubItem Icon={FilePen}   label="Drafts" />
-          <SideSubItem Icon={ListFilter} label="Category" />
-          <SideSubItem Icon={FileText} label="Pages" />
-          <SideSubItem Icon={Layers}   label="Series" />
-          <SideSubItem Icon={Folder}   label="Archived news" />
-        </SideGroup>
-
-        <SideGroup
-          Icon={Sparkles}
-          label="Engagement"
-          open={engagementOpen}
-          onToggle={() => setEngagementOpen(v => !v)}
-        />
-
-        <SideItem Icon={ListChecks} label="Task" />
-        <SideItem Icon={BarChart3}  label="Performance" />
-        <SideItem Icon={MediaIcon}  label="Media" />
-        <SideItem Icon={Users}      label="People and User" />
-
-        <SideGroup
-          Icon={Wrench}
-          label="Site configuration"
-          open={siteOpen}
-          onToggle={() => setSiteOpen(v => !v)}
-        />
-
-        <SideItem Icon={Settings} label="General Settings" />
-
-        {/* Pinned */}
-        <div className="mt-4 px-2.5 pb-1">
-          <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#94a3b8]">Pinned</p>
-        </div>
-        <SideItem Icon={Newspaper} label="News" />
-        <SideItem Icon={FilePen}   label="Drafts" />
-      </div>
-
-      {/* Footer profile */}
-      <div className="px-3 pb-4 pt-2 border-t border-[#eef2f7]">
-        <div className="flex items-center gap-2.5 p-2 rounded-[12px] hover:bg-[#f7faff] transition-colors cursor-pointer">
-          <div className="size-9 rounded-full bg-gradient-to-br from-[#FFE94A] to-[#F04B2A] inline-flex items-center justify-center text-white text-[13px] font-bold tracking-tight">
-            A
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-[12.5px] font-semibold text-[#0f172a] truncate tracking-tight">Adam Driver</p>
-            <p className="text-[10.5px] text-[#94a3b8] truncate">Senior Reporter</p>
-          </div>
-          <ChevronUp size={14} strokeWidth={2} className="text-[#94a3b8]" />
-        </div>
+      {/* Footer items */}
+      <div className="mt-auto flex flex-col gap-1">
+        {footer.map(({ Icon, label }, i) => (
+          <SideItem key={i} Icon={Icon} label={label} expanded={expanded} />
+        ))}
       </div>
     </nav>
   )
 }
 
-function SideItem({ Icon, label, active }: { Icon: typeof LayoutDashboard; label: string; active?: boolean }) {
-  return (
-    <button
-      type="button"
-      className={`w-full flex items-center gap-2.5 h-9 px-2.5 rounded-[10px] transition-colors ${
-        active
-          ? 'bg-[#eaf1fb] text-[#0f172a]'
-          : 'text-[#475569] hover:bg-[#f3f6fb] hover:text-[#0f172a]'
-      }`}
-    >
-      <Icon size={16} strokeWidth={2} className={active ? 'text-[#0f172a]' : 'text-[#94a3b8]'} />
-      <span className="text-[13px] font-semibold tracking-tight">{label}</span>
-    </button>
-  )
-}
-
-function SideGroup({
-  Icon, label, open, onToggle, children,
+function SideItem({
+  Icon, label, expanded, active,
 }: {
   Icon: typeof LayoutDashboard
   label: string
-  open: boolean
-  onToggle: () => void
-  children?: React.ReactNode
+  expanded: boolean
+  active?: boolean
 }) {
-  return (
-    <div>
-      <button
-        type="button"
-        onClick={onToggle}
-        className="w-full flex items-center gap-2.5 h-9 px-2.5 rounded-[10px] text-[#475569] hover:bg-[#f3f6fb] hover:text-[#0f172a] transition-colors"
-      >
-        <Icon size={16} strokeWidth={2} className="text-[#94a3b8]" />
-        <span className="flex-1 text-left text-[13px] font-semibold tracking-tight">{label}</span>
-        <ChevronDown
-          size={13}
-          strokeWidth={2.25}
-          className={`text-[#94a3b8] transition-transform ${open ? '' : '-rotate-90'}`}
-        />
-      </button>
-      {open && children && (
-        <div className="ml-3 mt-0.5 mb-1 border-l border-[#eef2f7] pl-2 flex flex-col">
-          {children}
-        </div>
-      )}
-    </div>
-  )
-}
-
-function SideSubItem({ Icon, label }: { Icon: typeof LayoutDashboard; label: string }) {
   return (
     <button
       type="button"
-      className="w-full flex items-center gap-2 h-8 px-2 rounded-[8px] text-[#64748b] hover:bg-[#f3f6fb] hover:text-[#0f172a] transition-colors"
+      title={expanded ? undefined : label}
+      className={`group flex items-center gap-2.5 h-9 rounded-[11px] transition-colors ${
+        expanded ? 'justify-start px-2.5 w-full' : 'justify-center w-9 self-center'
+      } ${
+        active
+          ? 'bg-[#DBEAFE] text-[#0787FF]'
+          : 'text-[#94a3b8] hover:bg-[#f3f6fb] hover:text-[#0f172a]'
+      }`}
     >
-      <Icon size={14} strokeWidth={2} className="text-[#94a3b8]" />
-      <span className="text-[12.5px] font-medium tracking-tight">{label}</span>
+      <Icon size={18} strokeWidth={1.75} className="shrink-0" />
+      {expanded && (
+        <span
+          className="text-[13px] font-medium tracking-tight whitespace-nowrap v11-side-fade"
+          style={{ fontFamily: 'var(--font-urbanist)' }}
+        >
+          {label}
+        </span>
+      )}
     </button>
   )
 }
@@ -520,11 +480,11 @@ function CardRow({
       {/* Gutter icon */}
       <div className="flex flex-col items-center pt-1 select-none">
         <div className={`size-8 rounded-[10px] inline-flex items-center justify-center transition-colors ${
-          focused ? 'bg-[#FFE94A] text-[#0f172a]' : 'bg-[#f3f6fb] text-[#94a3b8] group-hover:text-[#475569]'
+          focused ? 'bg-[#DBEAFE] text-[#0787FF]' : 'bg-[#f3f6fb] text-[#94a3b8] group-hover:text-[#475569]'
         }`}>
           <Glyph size={14} strokeWidth={2.25} />
         </div>
-        <div className={`flex-1 w-px mt-2 ${focused ? 'bg-[#F04B2A]/30' : 'bg-transparent group-hover:bg-[#e6ecf4]'}`} />
+        <div className={`flex-1 w-px mt-2 ${focused ? 'bg-[#0787FF]/30' : 'bg-transparent group-hover:bg-[#e6ecf4]'}`} />
       </div>
 
       {/* Body */}
@@ -578,7 +538,7 @@ function CardRow({
             onBlur={onBlur}
             onChange={e => onChange(e.target.value)}
             rows={2}
-            className="w-full resize-none bg-transparent outline-none text-[17px] leading-[1.5] font-medium italic text-[#0f172a] placeholder:text-[#cbd5e1] border-l-[3px] border-[#FFE94A] pl-4"
+            className="w-full resize-none bg-transparent outline-none text-[17px] leading-[1.5] font-medium italic text-[#0f172a] placeholder:text-[#cbd5e1] border-l-[3px] border-[#C4B5FD] pl-4"
           />
         )}
         {card.kind === 'attachment' && (
@@ -602,7 +562,7 @@ function CardRow({
           type="button"
           onClick={onRemove}
           aria-label="Remove card"
-          className="size-7 rounded-[8px] inline-flex items-center justify-center text-[#94a3b8] hover:bg-white hover:text-[#F04B2A] transition-colors"
+          className="size-7 rounded-[8px] inline-flex items-center justify-center text-[#94a3b8] hover:bg-white hover:text-[#0787FF] transition-colors"
         >
           <X size={13} strokeWidth={2.25} />
         </button>
@@ -617,7 +577,7 @@ function ImageCard({ value, alt, onPick, onClear }: { value: string; alt?: strin
       <button
         type="button"
         onClick={onPick}
-        className="w-full h-[220px] rounded-[16px] border border-dashed border-[#cfd9e8] bg-[#f7faff] flex flex-col items-center justify-center gap-2 text-[#64748b] hover:border-[#F04B2A] hover:text-[#F04B2A] hover:bg-[#fff7f4] transition-colors"
+        className="w-full h-[220px] rounded-[16px] border border-dashed border-[#cfd9e8] bg-[#f7faff] flex flex-col items-center justify-center gap-2 text-[#64748b] hover:border-[#0787FF] hover:text-[#0787FF] hover:bg-[#eff6ff] transition-colors"
       >
         <div className="size-10 rounded-[12px] bg-white border border-[#e6ecf4] inline-flex items-center justify-center">
           <ImageIcon size={16} strokeWidth={2} />
@@ -677,9 +637,9 @@ function kindGlyph(kind: CardKind): typeof Heading1 {
 function ReviewingState() {
   return (
     <div className="flex-1 flex flex-col items-center justify-center gap-5">
-      <span className="relative inline-flex items-center justify-center size-20 rounded-[24px] bg-[#FFF4B0]">
-        <span aria-hidden className="absolute inset-0 rounded-[24px] border-[2px] border-transparent border-t-[#F04B2A] animate-spin" />
-        <Sparkles size={28} strokeWidth={2} className="text-[#0f172a] v11-sparkle" />
+      <span className="relative inline-flex items-center justify-center size-20 rounded-[24px] bg-[#DBEAFE]">
+        <span aria-hidden className="absolute inset-0 rounded-[24px] border-[2px] border-transparent border-t-[#0787FF] animate-spin" />
+        <Sparkles size={28} strokeWidth={2} className="text-[#0787FF] v11-sparkle" />
       </span>
       <div className="flex flex-col items-center gap-1.5 text-center max-w-[320px]">
         <p className="text-[18px] font-bold tracking-tight text-[#0f172a]">Berry is reviewing your story…</p>
@@ -710,7 +670,7 @@ function ReviewedView({
 
       {/* Article (read-only-ish) */}
       <article className="flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-[700px] px-8 py-6 flex flex-col gap-5">
+        <div className="max-w-[720px] pl-12 pr-8 py-6 flex flex-col gap-5">
           {cards.map(card => (
             <ReadCard key={card.id} card={card} />
           ))}
@@ -724,7 +684,7 @@ function ReviewedView({
         {/* Status header */}
         <div className="px-5 pt-5 pb-4 border-b border-[#eef2f7]">
           <div className="flex items-start gap-3">
-            <span className="inline-flex items-center justify-center size-10 rounded-[14px] bg-[#FFE94A] text-[#0f172a] shrink-0">
+            <span className={`inline-flex items-center justify-center size-10 rounded-[14px] shrink-0 ${ready ? 'bg-[#D1FAE5] text-[#047857]' : 'bg-[#FED7AA] text-[#9A3412]'}`}>
               {ready
                 ? <Check size={18} strokeWidth={2.75} />
                 : <span className="text-[15px] font-bold leading-none tracking-tight">{pending}</span>}
@@ -745,7 +705,7 @@ function ReviewedView({
             disabled={!ready}
             className="relative mt-3.5 w-full inline-flex items-center justify-center gap-1.5 h-11 rounded-[14px] overflow-hidden disabled:opacity-45 disabled:cursor-not-allowed enabled:hover:brightness-105 enabled:active:scale-[0.99] transition-[filter,transform,opacity]"
           >
-            <span aria-hidden className={`absolute inset-0 rounded-[14px] ${ready ? 'bg-[#F04B2A]' : 'bg-[#0f172a]'}`} />
+            <span aria-hidden className={`absolute inset-0 rounded-[14px] ${ready ? 'bg-[#0787FF]' : 'bg-[#0f172a]'}`} />
             <span className="relative inline-flex items-center gap-1.5 text-[13.5px] font-semibold text-white tracking-tight">
               Send to Editor <ArrowRight size={14} strokeWidth={2.5} />
             </span>
@@ -819,7 +779,7 @@ function ReadCard({ card }: { card: Card }) {
   }
   if (card.kind === 'quote') {
     return (
-      <blockquote className="border-l-[3px] border-[#FFE94A] pl-4 text-[17px] italic font-medium text-[#0f172a] leading-[1.5]">
+      <blockquote className="border-l-[3px] border-[#C4B5FD] pl-4 text-[17px] italic font-medium text-[#0f172a] leading-[1.5]">
         {card.value}
       </blockquote>
     )
@@ -844,7 +804,7 @@ function CheckSection({
   children: React.ReactNode
 }) {
   const [open, setOpen] = useState(!collapsible)
-  const dot = accent === 'rose' ? 'bg-[#F04B2A]' : accent === 'amber' ? 'bg-[#FFE94A]' : 'bg-emerald-500'
+  const dot = accent === 'rose' ? 'bg-[#FB7185]' : accent === 'amber' ? 'bg-[#A78BFA]' : 'bg-[#34D399]'
   return (
     <section className="px-5 pt-4 pb-1">
       <button
@@ -872,7 +832,7 @@ function CheckCard({
   onAction: () => void
   meta?: string
 }) {
-  const dot = tone === 'attention' ? 'bg-[#F04B2A]' : 'bg-[#FFE94A]'
+  const dot = tone === 'attention' ? 'bg-[#FB7185]' : 'bg-[#A78BFA]'
   return (
     <div className="rounded-[16px] border border-[#e6ecf4] bg-white overflow-hidden hover:border-[#cfd9e8] hover:shadow-[0_4px_14px_-4px_rgba(31,57,99,0.08)] transition-[border-color,box-shadow]">
       <div className="p-4 flex flex-col gap-3">
@@ -981,7 +941,7 @@ function DetailsPanel({
             <input
               value={author}
               onChange={e => onAuthor(e.target.value)}
-              className="w-full h-11 px-3.5 rounded-[12px] bg-white border border-[#e6ecf4] focus:border-[#F04B2A] focus:ring-2 focus:ring-[#F04B2A]/15 outline-none text-[13.5px] tracking-tight text-[#0f172a] font-semibold transition-[box-shadow,border-color]"
+              className="w-full h-11 px-3.5 rounded-[12px] bg-white border border-[#e6ecf4] focus:border-[#0787FF] focus:ring-2 focus:ring-[#0787FF]/15 outline-none text-[13.5px] tracking-tight text-[#0f172a] font-semibold transition-[box-shadow,border-color]"
             />
           </Field>
 
@@ -1010,7 +970,7 @@ function DetailsPanel({
           <Field label="Tags">
             <input
               placeholder="Add a tag and press enter…"
-              className="w-full h-11 px-3.5 rounded-[12px] bg-white border border-[#e6ecf4] focus:border-[#F04B2A] focus:ring-2 focus:ring-[#F04B2A]/15 outline-none text-[13.5px] tracking-tight text-[#0f172a] placeholder:text-[#94a3b8] transition-[box-shadow,border-color]"
+              className="w-full h-11 px-3.5 rounded-[12px] bg-white border border-[#e6ecf4] focus:border-[#0787FF] focus:ring-2 focus:ring-[#0787FF]/15 outline-none text-[13.5px] tracking-tight text-[#0f172a] placeholder:text-[#94a3b8] transition-[box-shadow,border-color]"
             />
           </Field>
 
@@ -1051,7 +1011,7 @@ function DetailsPanel({
           <button
             type="button"
             onClick={onClose}
-            className="h-10 px-4 rounded-[12px] bg-[#F04B2A] text-white text-[13px] font-semibold tracking-tight shadow-[0_8px_18px_-6px_rgba(240,75,42,0.45)] hover:brightness-105 transition-[filter]"
+            className="h-10 px-4 rounded-[12px] bg-[#0787FF] text-white text-[13px] font-semibold tracking-tight shadow-[0_8px_18px_-6px_rgba(7,135,255,0.45)] hover:brightness-105 transition-[filter]"
           >
             Save details
           </button>
@@ -1066,7 +1026,7 @@ function Field({ label, required, children }: { label: string; required?: boolea
     <div className="flex flex-col gap-1.5">
       <div className="flex items-center gap-1.5">
         <span className="text-[10.5px] font-bold uppercase tracking-[0.18em] text-[#94a3b8]">{label}</span>
-        {required && <span className="size-1.5 rounded-full bg-[#F04B2A]" />}
+        {required && <span className="size-1.5 rounded-full bg-[#0787FF]" />}
       </div>
       {children}
     </div>
@@ -1106,7 +1066,7 @@ function ImagePicker({
               value={q}
               onChange={e => setQ(e.target.value)}
               placeholder="Search media library…"
-              className="w-full h-11 pl-10 pr-3 rounded-[12px] bg-[#f7faff] border border-[#eef2f7] focus:border-[#F04B2A] focus:bg-white focus:ring-2 focus:ring-[#F04B2A]/15 outline-none text-[13.5px] tracking-tight text-[#0f172a] placeholder:text-[#94a3b8] transition-[box-shadow,border-color,background-color]"
+              className="w-full h-11 pl-10 pr-3 rounded-[12px] bg-[#f7faff] border border-[#eef2f7] focus:border-[#0787FF] focus:bg-white focus:ring-2 focus:ring-[#0787FF]/15 outline-none text-[13.5px] tracking-tight text-[#0f172a] placeholder:text-[#94a3b8] transition-[box-shadow,border-color,background-color]"
             />
           </div>
         </header>
@@ -1131,7 +1091,7 @@ function ImagePicker({
                 key={img.id}
                 type="button"
                 onClick={() => onPick(img)}
-                className="group relative aspect-[4/3] rounded-[14px] overflow-hidden border border-[#e6ecf4] hover:border-[#F04B2A] hover:shadow-[0_8px_20px_-6px_rgba(31,57,99,0.18)] transition-[border-color,box-shadow]"
+                className="group relative aspect-[4/3] rounded-[14px] overflow-hidden border border-[#e6ecf4] hover:border-[#0787FF] hover:shadow-[0_8px_20px_-6px_rgba(31,57,99,0.18)] transition-[border-color,box-shadow]"
               >
                 <div className={`absolute inset-0 bg-gradient-to-br ${img.tone}`} />
                 <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(255,255,255,0.4),transparent_55%)]" />
@@ -1201,9 +1161,9 @@ function BlockPicker({
               key={kind}
               type="button"
               onClick={() => onPick(kind)}
-              className="group flex items-start gap-3 p-4 rounded-[16px] border border-[#e6ecf4] hover:border-[#F04B2A] hover:bg-[#fff7f4] transition-colors text-left"
+              className="group flex items-start gap-3 p-4 rounded-[16px] border border-[#e6ecf4] hover:border-[#0787FF] hover:bg-[#eff6ff] transition-colors text-left"
             >
-              <span className="size-10 rounded-[12px] bg-[#FFE94A] text-[#0f172a] inline-flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+              <span className="size-10 rounded-[12px] bg-[#DBEAFE] text-[#0787FF] inline-flex items-center justify-center shrink-0 group-hover:bg-[#0787FF] group-hover:text-white transition-colors">
                 <Icon size={16} strokeWidth={2.25} />
               </span>
               <div className="flex-1 min-w-0">
@@ -1233,7 +1193,7 @@ function CategoryPicker({
         <header className="px-5 pt-4 pb-3 flex flex-col gap-3 border-b border-[#eef2f7]">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Tag size={14} className="text-[#F04B2A]" />
+              <Tag size={14} className="text-[#0787FF]" />
               <h2 className="text-[15px] font-bold tracking-tight text-[#0f172a]">Choose a category</h2>
             </div>
             <button
@@ -1252,7 +1212,7 @@ function CategoryPicker({
               value={q}
               onChange={e => setQ(e.target.value)}
               placeholder="Search categories…"
-              className="w-full h-10 pl-9 pr-3 rounded-[10px] bg-[#f7faff] border border-[#eef2f7] focus:border-[#F04B2A] focus:bg-white focus:ring-2 focus:ring-[#F04B2A]/15 outline-none text-[13px] tracking-tight text-[#0f172a] placeholder:text-[#94a3b8] transition-[box-shadow,border-color,background-color]"
+              className="w-full h-10 pl-9 pr-3 rounded-[10px] bg-[#f7faff] border border-[#eef2f7] focus:border-[#0787FF] focus:bg-white focus:ring-2 focus:ring-[#0787FF]/15 outline-none text-[13px] tracking-tight text-[#0f172a] placeholder:text-[#94a3b8] transition-[box-shadow,border-color,background-color]"
             />
           </div>
         </header>
@@ -1295,8 +1255,8 @@ function PrimaryButton({ children, onClick }: { children: React.ReactNode; onCli
       onClick={onClick}
       className="relative inline-flex items-center justify-center gap-1.5 min-h-[40px] px-4 rounded-[14px] overflow-hidden hover:brightness-105 active:scale-[0.98] transition-[filter,transform]"
     >
-      <span aria-hidden className="absolute inset-0 bg-[#F04B2A] rounded-[14px]" />
-      <span aria-hidden className="absolute inset-0 rounded-[14px] shadow-[inset_0_1px_0_rgba(255,255,255,0.28),0_10px_24px_-8px_rgba(240,75,42,0.45)]" />
+      <span aria-hidden className="absolute inset-0 bg-[#0787FF] rounded-[14px]" />
+      <span aria-hidden className="absolute inset-0 rounded-[14px] shadow-[inset_0_1px_0_rgba(255,255,255,0.28),0_10px_24px_-8px_rgba(7,135,255,0.45)]" />
       <span className="relative inline-flex items-center gap-1.5 text-[13.5px] font-semibold leading-5 text-white tracking-tight">
         {children}
       </span>
@@ -1312,6 +1272,12 @@ function V11Styles() {
         50%      { transform: rotate(6deg)  scale(1.08); opacity: 0.9; }
       }
       .v11-sparkle { animation: v11-sparkle 2.4s ease-in-out infinite; }
+
+      @keyframes v11-side-fade {
+        from { opacity: 0; transform: translateX(-4px); }
+        to   { opacity: 1; transform: translateX(0); }
+      }
+      .v11-side-fade { animation: v11-side-fade 220ms cubic-bezier(0.22,1,0.36,1) 80ms both; }
 
       @keyframes v11-overlay-in {
         from { opacity: 0; }
