@@ -23,15 +23,19 @@ const VERSIONS: Version[] = [
   { id: 'v2', label: 'v2', tag: 'News list',  note: 'News index page',             date: 'Jun 5, 2026',  route: '/news' },
   { id: 'v3', label: 'v3', tag: 'Creation',   note: 'News creation flow (legacy)', date: 'Jun 9, 2026',  route: '/news/new' },
   { id: 'v4', label: 'v4', tag: 'New design', note: 'News creation v4',            date: 'Jun 15, 2026', route: '/news/new-v4' },
-  { id: 'v5', label: 'v5', tag: 'Berry AI',   note: 'AI-first vibrant theme',      date: 'Jun 15, 2026', route: '/news/new-v5' },
+  { id: 'v5', label: 'v5', tag: 'Berry AI',     note: 'AI-first vibrant theme',           date: 'Jun 15, 2026', route: '/news/new-v5' },
+  { id: 'v8',  label: 'v8',  tag: 'Berry Review',   note: 'Persistent two-column review',       date: 'Jun 17, 2026', route: '/news/new-v8' },
+  { id: 'v10', label: 'v10', tag: 'Dashboard Soft', note: 'Urbanist + soft-blue dashboard skin', date: 'Jun 19, 2026', route: '/news/new-v10' },
 ]
 
 const TAG_COLORS: Record<string, string> = {
-  Dashboard:    '#737373',
-  'News list':  '#8B5CF6',
-  Creation:     '#0787ff',
-  'New design': '#16a34a',
-  'Berry AI':   '#7c3aed',
+  Dashboard:      '#737373',
+  'News list':    '#8B5CF6',
+  Creation:       '#0787ff',
+  'New design':   '#16a34a',
+  'Berry AI':     '#7c3aed',
+  'Berry Review': '#7c3aed',
+  'Dashboard Soft': '#F04B2A',
 }
 
 /** Pick the version whose route best matches the current pathname.

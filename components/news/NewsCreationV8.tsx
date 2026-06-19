@@ -1,0 +1,2006 @@
+'use client'
+
+/**
+ * NewsCreationV8 — Berry Review (persistent two-column workspace).
+ *
+ * The review model from v7 is preserved (what Berry checks, what counts as
+ * critical vs. suggestion). What changes is the interaction model:
+ * instead of v7's modal/overlay flow, Berry Review lives in a permanent
+ * right-side panel beside the article. The editor never disappears.
+ *
+ * Push for Review → a brief "Berry is reviewing…" spinner populates the
+ * panel with Needs Attention, Suggestions, Fixed by Berry, and Sources.
+ * Reporters accept or reject inside the panel; the article stays the hero.
+ *
+ * Visual reference: Linear, Notion, Arc, GitHub PRs, Grammarly Suggestions.
+ */
+
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import {
+  ArrowLeft, Check, ChevronDown, ChevronRight, FileText, Layers,
+  LayoutDashboard, ListChecks, MessageSquare, MessageSquareText,
+  Newspaper, Plus, Settings, Sparkles, SquarePen, Users, Wrench, Clock,
+  ArrowRight, Globe,
+} from 'lucide-react'
+
+/* ───────────────────────────────────────────────────────────────────────────
+   Data — reused verbatim from v7
+   ─────────────────────────────────────────────────────────────────────────── */
+
+type CheckId =
+  | 'grammar' | 'spelling' | 'metadata' | 'formatting' | 'headline'
+  | 'cover' | 'duplicate' | 'attribution' | 'source' | 'legal' | 'readiness'
+  | 'synopsis'
+
+type FixChange =
+  | { kind: 'replace'; before: string; after: string; where?: string; alternatives?: string[] }
+  | { kind: 'add';     value: string;  where?: string }
+  | { kind: 'pass';    text: string }
+type AutoFix = {
+  id: CheckId
+  label: string
+  detail?: string
+  variant: 'suggestion' | 'applied' | 'verified'
+  changes: FixChange[]
+}
+type Issue = {
+  id: string
+  tone: 'critical' | 'suggestion'
+  eyebrow: string
+  title: string
+  body?: string
+  anchor: 'headline' | 'metadata' | `p${number}`
+  action: string
+  targetPhrase?: string
+  kind?: 'category'
+}
+
+const AUTO_FIXES: AutoFix[] = [
+  {
+    id: 'grammar',
+    label: 'Grammar — 3 suggestions',
+    detail: 'Punctuation and clause clarity',
+    variant: 'suggestion',
+    changes: [
+      { kind: 'replace', where: 'Paragraph 1', before: 'अपेक्षामा थिए तर बिहान',     after: 'अपेक्षामा थिए। तर बिहान' },
+      { kind: 'replace', where: 'Paragraph 2', before: 'workers according to',       after: 'workers, according to' },
+      { kind: 'replace', where: 'Paragraph 3', before: 'school जान',                 after: 'स्कुल जान' },
+    ],
+  },
+  {
+    id: 'spelling',
+    label: 'Spelling — 1 suggestion',
+    detail: '"importrers" looks unintended',
+    variant: 'suggestion',
+    changes: [
+      { kind: 'replace', where: 'Paragraph 2', before: 'importrers', after: 'importers' },
+    ],
+  },
+  {
+    id: 'headline',
+    label: 'Headline polish',
+    detail: 'Tighter framing, same meaning',
+    variant: 'suggestion',
+    changes: [
+      {
+        kind: 'replace',
+        where: 'Headline',
+        before: 'व्यवस्थापन फेरबदलले सुकुमवासी होल्डिङ सेन्टरमा सोमबार तनाव, आजदेखि सहज',
+        after:  'सुकुमवासी होल्डिङ सेन्टरमा खाना अभाव — सोमबार तनाव, आजदेखि सहज',
+        alternatives: [
+          'होल्डिङ सेन्टरमा खाना अभाव: सोमबार तनाव, मंगलबारदेखि सहज',
+          'सुकुमवासी होल्डिङ सेन्टरमा सोमबार आक्रोश — व्यवस्थापन फेरबदलपछि शान्त',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'synopsis',
+    label: 'Synopsis — needs your approval',
+    detail: 'Tighter, more specific framing',
+    variant: 'suggestion',
+    changes: [
+      {
+        kind: 'replace',
+        where: 'Synopsis',
+        before: 'व्यवस्थापन फेरबदलले सुकुमवासी होल्डिङ सेन्टरमा सोमबार तनाव, आजदेखि सहज',
+        after:  'सुकुमवासी होल्डिङ सेन्टरमा खाना अभावले सोमबार तनाव — व्यवस्थापन फेरबदलपछि स्थिति सहज',
+        alternatives: [
+          'खाना ढिलाइले सुकुमवासी होल्डिङ सेन्टरमा सोमबार आक्रोश; नयाँ व्यवस्थापनसँगै आजदेखि क्रमशः सहज ।',
+          'राधास्वामी होल्डिङ सेन्टरमा खाना नआएपछि सोमबार तनाव छायो — व्यवस्थापन परिवर्तनसँगै स्थिति सामान्य बन्दै ।',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'metadata',
+    label: 'Metadata filled where empty',
+    detail: 'Category · tags · slug',
+    variant: 'applied',
+    changes: [
+      { kind: 'add', where: 'Tags',     value: 'import-reform, small-business, birgunj' },
+      { kind: 'add', where: 'Slug',     value: 'import-reform-policy-small-businesses' },
+    ],
+  },
+  {
+    id: 'formatting',
+    label: 'Invisible cleanups',
+    detail: 'Smart quotes, double spaces',
+    variant: 'applied',
+    changes: [
+      { kind: 'replace', where: 'Paragraph 4', before: '"This decision was made',  after: '“This decision was made' },
+      { kind: 'replace', where: 'Body',        before: 'workers ."',               after: 'workers.”' },
+      { kind: 'pass',    text: 'Removed 4 stray double spaces.' },
+    ],
+  },
+  {
+    id: 'cover',
+    label: 'Cover image verified',
+    variant: 'verified',
+    changes: [
+      { kind: 'pass', text: 'Aspect ratio 16:9 · file size 142 KB · alt text present.' },
+    ],
+  },
+  {
+    id: 'duplicate',
+    label: 'No duplicate information found',
+    variant: 'verified',
+    changes: [
+      { kind: 'pass', text: 'Scanned 5 paragraphs against 2 linked sources and prior coverage from the same reporter — no overlapping passages above 70% similarity.' },
+    ],
+  },
+  {
+    id: 'legal',
+    label: 'No legal risk flagged',
+    variant: 'verified',
+    changes: [
+      { kind: 'pass', text: 'No named individuals accused of crime without attribution. No copyrighted long-form quotes detected. No personal identifiers found in body.' },
+    ],
+  },
+]
+
+const ISSUES: Issue[] = [
+  {
+    id: 'cat-1',
+    tone: 'critical',
+    eyebrow: 'Metadata',
+    anchor: 'metadata',
+    title: 'Missing category',
+    body: 'This story has no category — required before sending to editor.',
+    action: 'Choose category',
+    kind: 'category',
+  },
+  {
+    id: 'src-1',
+    tone: 'critical',
+    eyebrow: 'Source',
+    anchor: 'p2',
+    title: 'Unsupported claim',
+    body: '"The policy will impact over 50,000 workers." — could not be verified from attached sources.',
+    action: 'Link source',
+    targetPhrase: 'The policy will impact over 50,000 workers',
+  },
+  {
+    id: 'att-1',
+    tone: 'critical',
+    eyebrow: 'Attribution',
+    anchor: 'p4',
+    title: 'Missing attribution',
+    body: 'Paragraph 4 contains a quote without an identified speaker.',
+    action: 'Add attribution',
+    targetPhrase: 'This decision was made without consulting workers.',
+  },
+]
+
+const CATEGORY_OPTIONS = [
+  'Politics', 'Economy', 'Society', 'Culture', 'Sports', 'World', 'Opinion',
+  'Business', 'Markets', 'Technology', 'Science', 'Health', 'Education',
+  'Environment', 'Climate', 'Energy', 'Agriculture', 'Crime', 'Justice',
+  'Defense', 'Foreign Affairs', 'Local', 'Kathmandu', 'Lalitpur', 'Birgunj',
+  'Entertainment', 'Film', 'Music', 'Books', 'Travel', 'Food', 'Lifestyle',
+  'Religion', 'Festival', 'History', 'Photo Essay', 'Investigation',
+  'Analysis', 'Profile', 'Obituary',
+]
+
+const PARAGRAPHS = [
+  'काठमाडौँ — कीर्तिपुरस्थित राधास्वामी सत्संग होल्डिङ सेन्टरमा रहेका सुकुमवासीहरू खाना व्यवस्थापनको समन्वय नहुँदा सोमबार आक्रोशित भए । उनीहरू बिहान चियाको प्रतीक्षामा थिए । तर बिहान न चिया आयो, न खाना नै ।',
+  'The policy will impact over 50,000 workers, according to early estimates, with small importers in the Birgunj corridor expected to absorb the heaviest near-term cost.',
+  'बालबालिकाहरू बिहान ९ बजेपछि स्कुल जान ठिक्क परेको निकैबेरसम्म पनि खाना नआएपछि अभिभावकहरू आश्चर्यमा परे र क्यान्टिनतिर गए ।',
+  '"This decision was made without consulting workers." — the statement could not be attributed to a named speaker.',
+  'गृवानिकाहरू खाना कतिबेला आउँछ भनेर होल्डिङ सेन्टरमै रहेका नगर प्रहरीहरूसँग बुझ्न पनि गएका थिए ।',
+]
+
+const SOURCES = [
+  { title: 'सरकारसँग जनताको मुख्य अपेक्षा के छ ?', domain: 'kathmandupost.com', initial: 'K' },
+  { title: 'Import reform policy briefing — Q2 2026',     domain: 'commerce.gov.np',    initial: 'C' },
+]
+
+/* ───────────────────────────────────────────────────────────────────────────
+   Root
+   ─────────────────────────────────────────────────────────────────────────── */
+
+type ReviewState = 'idle' | 'reviewing' | 'reviewed'
+
+type Revision = {
+  id: number
+  timestamp: number
+  resolvedIssues: Set<string>
+  handledSuggestions: Set<CheckId>
+  preHandledSuggestions: Set<CheckId>
+}
+
+type AnimAnchor = 'headline' | 'synopsis' | `p${number}`
+type AnimState = { anchor: AnimAnchor; oldText: string; newText: string; phase: 'out' | 'in' } | null
+
+type InlineMarker = {
+  key: string
+  anchor: 'headline' | 'synopsis' | `p${number}`
+  phrase: string
+  tone: 'suggestion' | 'critical'
+  eyebrow: string
+  summary: string
+  actionLabel: string
+  fix?: AutoFix
+  changeIndex?: number
+  issueId?: string
+}
+
+type PopoverState = {
+  markerKey: string
+  rect: { left: number; top: number; width: number; bottom: number }
+} | null
+
+const SUGGESTION_ORDER: CheckId[] = ['grammar', 'spelling', 'headline']
+
+export default function NewsCreationV8() {
+  const router = useRouter()
+
+  const [reviewState, setReviewState] = useState<ReviewState>('idle')
+  const [title, setTitle] = useState('व्यवस्थापन फेरबदलले सुकुमवासी होल्डिङ सेन्टरमा सोमबार तनाव, आजदेखि सहज')
+  const [synopsis, setSynopsis] = useState('व्यवस्थापन फेरबदलले सुकुमवासी होल्डिङ सेन्टरमा सोमबार तनाव, आजदेखि सहज')
+  const [paragraphs, setParagraphs] = useState(PARAGRAPHS)
+  const [editingParagraph, setEditingParagraph] = useState<number | null>(null)
+
+  const [revisions, setRevisions] = useState<Revision[]>([])
+  const [activeRevIdx, setActiveRevIdx] = useState(0)
+  const [, setTick] = useState(0)
+  const animTimers = useRef<number[]>([])
+  const [anim, setAnim] = useState<AnimState>(null)
+  const [categories, setCategories] = useState<string[]>([])
+  const [primaryCategory, setPrimaryCategory] = useState<string | null>(null)
+  const [popover, setPopover] = useState<PopoverState>(null)
+
+  useEffect(() => {
+    const t = window.setInterval(() => setTick(x => x + 1), 30_000)
+    return () => window.clearInterval(t)
+  }, [])
+
+  useEffect(() => () => {
+    animTimers.current.forEach(id => window.clearTimeout(id))
+  }, [])
+
+  const isLive = activeRevIdx === revisions.length - 1
+  const liveRevision = revisions[revisions.length - 1]
+  const viewedRevision = revisions[activeRevIdx]
+
+  const openIssues = useMemo(() => {
+    if (!viewedRevision) return []
+    return ISSUES.filter(i => !viewedRevision.resolvedIssues.has(i.id))
+  }, [viewedRevision])
+
+  const openSuggestions = useMemo(() => {
+    if (!viewedRevision) return []
+    return AUTO_FIXES.filter(
+      f => f.variant === 'suggestion'
+        && !viewedRevision.handledSuggestions.has(f.id)
+        && !viewedRevision.preHandledSuggestions.has(f.id)
+    )
+  }, [viewedRevision])
+
+  const appliedFixes = AUTO_FIXES.filter(f => f.variant === 'applied' || f.variant === 'verified')
+
+  const inlineMarkers = useMemo<InlineMarker[]>(() => {
+    if (reviewState !== 'reviewed' || !isLive) return []
+    const markers: InlineMarker[] = []
+    openSuggestions.forEach(fix => {
+      fix.changes.forEach((c, ci) => {
+        if (c.kind !== 'replace' || !c.where) return
+        let anchor: 'headline' | 'synopsis' | `p${number}` | null = null
+        if (c.where === 'Headline') anchor = 'headline'
+        else if (c.where === 'Synopsis') anchor = 'synopsis'
+        else {
+          const m = c.where.match(/Paragraph (\d+)/)
+          if (m) anchor = `p${parseInt(m[1], 10) - 1}` as `p${number}`
+        }
+        if (!anchor) return
+        const eyebrow =
+          fix.id === 'spelling' ? 'Spelling suggestion'
+          : fix.id === 'grammar' ? 'Grammar'
+          : fix.id === 'headline' ? 'Headline'
+          : fix.id === 'synopsis' ? 'Synopsis'
+          : fix.label
+        markers.push({
+          key: `${fix.id}-${ci}`,
+          anchor,
+          phrase: c.before,
+          tone: 'suggestion',
+          eyebrow,
+          summary: fix.detail || fix.label,
+          actionLabel: 'Accept',
+          fix,
+          changeIndex: ci,
+        })
+      })
+    })
+    openIssues.forEach(issue => {
+      if (!issue.targetPhrase) return
+      if (issue.anchor === 'headline' || issue.anchor === 'metadata') return
+      markers.push({
+        key: `issue-${issue.id}`,
+        anchor: issue.anchor,
+        phrase: issue.targetPhrase,
+        tone: 'critical',
+        eyebrow: issue.eyebrow,
+        summary: issue.title,
+        actionLabel: issue.action,
+        issueId: issue.id,
+      })
+    })
+    return markers
+  }, [openSuggestions, openIssues, reviewState, isLive])
+
+  useEffect(() => {
+    if (!popover) return
+    const onDocClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement
+      if (target.closest('[data-berry-popover]') || target.closest('[data-berry-marker]')) return
+      setPopover(null)
+    }
+    const onScroll = () => setPopover(null)
+    document.addEventListener('mousedown', onDocClick)
+    window.addEventListener('scroll', onScroll, true)
+    window.addEventListener('resize', onScroll)
+    return () => {
+      document.removeEventListener('mousedown', onDocClick)
+      window.removeEventListener('scroll', onScroll, true)
+      window.removeEventListener('resize', onScroll)
+    }
+  }, [popover])
+
+  useEffect(() => { setPopover(null) }, [anim])
+
+  const pendingCount = openIssues.length + openSuggestions.length
+  const sendable = reviewState === 'reviewed' && isLive && pendingCount === 0
+
+  function startReview() {
+    if (reviewState === 'reviewing') return
+    setReviewState('reviewing')
+    window.setTimeout(() => {
+      setRevisions(prev => {
+        const nextId = prev.length + 1
+        const preHandled = new Set<CheckId>()
+        // Each new revision: Berry has auto-resolved one more suggestion than the prior.
+        // Revision 1 → none pre-handled; Revision 2 → 1 pre-handled; etc.
+        for (let i = 0; i < prev.length && i < SUGGESTION_ORDER.length; i++) {
+          preHandled.add(SUGGESTION_ORDER[i])
+        }
+        const newRev: Revision = {
+          id: nextId,
+          timestamp: Date.now(),
+          resolvedIssues: new Set(),
+          handledSuggestions: new Set(),
+          preHandledSuggestions: preHandled,
+        }
+        const next = [...prev, newRev]
+        setActiveRevIdx(next.length - 1)
+        return next
+      })
+      setReviewState('reviewed')
+    }, 1300)
+  }
+
+  function resolveIssue(id: string) {
+    if (!isLive) return
+    setRevisions(prev => {
+      const next = [...prev]
+      const last = next[next.length - 1]
+      const resolved = new Set(last.resolvedIssues); resolved.add(id)
+      next[next.length - 1] = { ...last, resolvedIssues: resolved }
+      return next
+    })
+  }
+
+  function runAcceptAnimation(anchor: AnimAnchor, oldText: string, newText: string, commit: () => void) {
+    // Phase 1: blur/fade out the old text.
+    setAnim({ anchor, oldText, newText, phase: 'out' })
+    const t1 = window.setTimeout(() => {
+      // Commit the underlying state, then run the shimmer-in phase.
+      commit()
+      setAnim({ anchor, oldText, newText, phase: 'in' })
+      const t2 = window.setTimeout(() => setAnim(null), 700)
+      animTimers.current.push(t2)
+    }, 320)
+    animTimers.current.push(t1)
+  }
+
+  function acceptSuggestion(fix: AutoFix, overrideAfter?: string) {
+    if (!isLive) return
+
+    const markHandled = () => setRevisions(prev => {
+      const next = [...prev]
+      const last = next[next.length - 1]
+      const handled = new Set(last.handledSuggestions); handled.add(fix.id)
+      next[next.length - 1] = { ...last, handledSuggestions: handled }
+      return next
+    })
+
+    if (fix.id === 'headline') {
+      const headlineChange = fix.changes.find(c => c.kind === 'replace') as
+        Extract<FixChange, { kind: 'replace' }> | undefined
+      if (headlineChange) {
+        const target = overrideAfter ?? headlineChange.after
+        runAcceptAnimation('headline', title, target, () => {
+          setTitle(target)
+          markHandled()
+        })
+        return
+      }
+    } else if (fix.id === 'synopsis') {
+      const synopsisChange = fix.changes.find(c => c.kind === 'replace') as
+        Extract<FixChange, { kind: 'replace' }> | undefined
+      if (synopsisChange) {
+        const target = overrideAfter ?? synopsisChange.after
+        runAcceptAnimation('synopsis', synopsis, target, () => {
+          setSynopsis(target)
+          markHandled()
+        })
+        return
+      }
+    } else if (fix.id === 'grammar' || fix.id === 'spelling') {
+      // Find the first paragraph-targeted change to animate; apply all on commit.
+      const firstP = fix.changes.find(c => {
+        if (c.kind !== 'replace' || !c.where) return false
+        return /Paragraph (\d+)/.test(c.where)
+      }) as Extract<FixChange, { kind: 'replace' }> | undefined
+
+      const applyAll = () => {
+        const next = [...paragraphs]
+        fix.changes.forEach(c => {
+          if (c.kind !== 'replace' || !c.where) return
+          const m = c.where.match(/Paragraph (\d+)/)
+          if (!m) return
+          const idx = parseInt(m[1], 10) - 1
+          if (idx >= 0 && idx < next.length) {
+            next[idx] = next[idx].replace(c.before, c.after)
+          }
+        })
+        setParagraphs(next)
+        markHandled()
+      }
+
+      if (firstP && firstP.where) {
+        const m = firstP.where.match(/Paragraph (\d+)/)!
+        const idx = parseInt(m[1], 10) - 1
+        const anchor = `p${idx}` as AnimAnchor
+        const oldP = paragraphs[idx]
+        const newP = oldP.replace(firstP.before, firstP.after)
+        runAcceptAnimation(anchor, oldP, newP, applyAll)
+        return
+      }
+      applyAll()
+      return
+    }
+    markHandled()
+  }
+
+  function toggleCategory(issueId: string, value: string) {
+    setCategories(prev => {
+      const has = prev.includes(value)
+      if (has) {
+        const next = prev.filter(v => v !== value)
+        if (primaryCategory === value) {
+          setPrimaryCategory(next[0] ?? null)
+        }
+        return next
+      }
+      const next = [...prev, value]
+      if (!primaryCategory) setPrimaryCategory(value)
+      return next
+    })
+    void issueId
+  }
+
+  function setPrimary(value: string) {
+    setPrimaryCategory(value)
+  }
+
+  function removeCategory(value: string) {
+    setCategories(prev => {
+      const next = prev.filter(v => v !== value)
+      if (primaryCategory === value) setPrimaryCategory(next[0] ?? null)
+      return next
+    })
+  }
+
+  useEffect(() => {
+    if (primaryCategory && reviewState === 'reviewed' && isLive) {
+      const catIssue = ISSUES.find(i => i.kind === 'category')
+      if (catIssue && !viewedRevision?.resolvedIssues.has(catIssue.id)) {
+        resolveIssue(catIssue.id)
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [primaryCategory])
+
+  function acceptFromMarker(marker: InlineMarker, overrideAfter?: string) {
+    setPopover(null)
+    if (marker.fix) acceptSuggestion(marker.fix, overrideAfter)
+  }
+
+  function openMarkerPopover(markerKey: string, el: HTMLElement) {
+    const r = el.getBoundingClientRect()
+    setPopover({ markerKey, rect: { left: r.left + r.width / 2, top: r.top, bottom: r.bottom, width: r.width } })
+  }
+
+  function rejectSuggestion(fix: AutoFix) {
+    if (!isLive) return
+    setRevisions(prev => {
+      const next = [...prev]
+      const last = next[next.length - 1]
+      const handled = new Set(last.handledSuggestions); handled.add(fix.id)
+      next[next.length - 1] = { ...last, handledSuggestions: handled }
+      return next
+    })
+  }
+
+  function sendToEditor() {
+    if (!sendable) return
+    // eslint-disable-next-line no-console
+    console.log('[NewsCreationV8] Sent to editor')
+  }
+
+  return (
+    <div
+      className="relative flex h-screen w-screen overflow-hidden"
+      style={{
+        background: `
+          radial-gradient(60% 40% at 100% 0%, rgba(124,58,237,0.10) 0%, transparent 60%),
+          radial-gradient(55% 35% at 0% 0%, rgba(7,135,255,0.08) 0%, transparent 65%),
+          #f3f4f6
+        `,
+      }}
+    >
+      <V8Styles />
+      <CollapsedSidebar />
+
+      {/* Main editor card */}
+      <main className="flex-1 mt-[10px] mb-[10px] backdrop-blur-[100px] bg-[rgba(255,255,255,0.6)] border border-black/5 rounded-[14px] shadow-[0px_0px_16px_0px_rgba(0,0,0,0.02)] overflow-hidden flex flex-col min-w-0">
+
+        {/* Header */}
+        <header className="border-b border-slate-200 flex items-center justify-between px-4 h-[62px] shrink-0">
+          <div className="flex items-center gap-3 min-w-0">
+            <button
+              type="button"
+              onClick={() => router.back()}
+              className="inline-flex items-center justify-center size-8 rounded-lg hover:bg-slate-100 transition-colors"
+              aria-label="Back"
+            >
+              <ArrowLeft size={16} strokeWidth={1.75} className="text-slate-700" />
+            </button>
+            <h1 className="text-[16px] font-medium leading-6 text-[#262626] truncate" style={{ fontFamily: 'var(--font-inter)' }}>
+              New news
+            </h1>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <GhostBtn>Save as Draft</GhostBtn>
+            <OutlineBtn>Preview</OutlineBtn>
+            <PrimaryBtn onClick={startReview}>
+              {reviewState === 'idle' ? 'Push for Review' :
+               reviewState === 'reviewing' ? 'Reviewing…' :
+               'Re-run Review'}
+            </PrimaryBtn>
+          </div>
+        </header>
+
+        {/* Secondary row */}
+        <div className="flex items-center justify-end gap-4 px-4 pt-[14px] pb-2 shrink-0">
+          <div className="flex items-center gap-2 text-[14px] text-[#0f172a]" style={{ fontFamily: 'var(--font-inter)' }}>
+            <span>1,243 words</span>
+            <span className="size-1.5 rounded-full bg-slate-300" />
+            <span>1,132 characters</span>
+          </div>
+          <OutlineBtn small><Sparkles size={14} strokeWidth={1.75} className="text-[#0787ff]" />Enable Focus Mode</OutlineBtn>
+          <OutlineBtn small><FileText size={14} strokeWidth={1.75} className="text-slate-700" />Manage details</OutlineBtn>
+        </div>
+
+        {/* Article */}
+        <article className="flex-1 min-w-0 overflow-y-auto">
+          <div className="mx-auto max-w-[820px] px-[48px] py-[28px] flex flex-col gap-7">
+
+            <FieldGroup
+              eyebrow="Headline"
+              helper="Aim for 7–12 words. This is what readers see first."
+              counter={`${title.length} / 120`}
+            >
+              {anim && anim.anchor === 'headline' ? (
+                <div
+                  className={`w-full text-[24px] leading-[1.3] font-semibold text-[#0f172a] ${
+                    anim.phase === 'out' ? 'apple-text-out' : 'apple-text-in apple-shimmer'
+                  }`}
+                  style={{ fontFamily: 'var(--font-inter)' }}
+                  aria-hidden
+                >
+                  {anim.phase === 'out' ? anim.oldText : anim.newText}
+                </div>
+              ) : inlineMarkers.some(m => m.anchor === 'headline') ? (
+                <div
+                  className="w-full text-[24px] leading-[1.3] font-semibold text-[#0f172a]"
+                  style={{ fontFamily: 'var(--font-inter)' }}
+                >
+                  <MarkedText
+                    text={title}
+                    markers={inlineMarkers.filter(m => m.anchor === 'headline')}
+                    activeKey={popover?.markerKey}
+                    onMarkerClick={openMarkerPopover}
+                  />
+                </div>
+              ) : (
+                <textarea
+                  value={title}
+                  onChange={e => setTitle(e.target.value)}
+                  rows={2}
+                  className="w-full resize-none bg-transparent outline-none text-[24px] leading-[1.3] font-semibold text-[#0f172a]"
+                  style={{ fontFamily: 'var(--font-inter)' }}
+                />
+              )}
+            </FieldGroup>
+
+            <FieldGroup eyebrow="Synopsis" collapsible>
+              {anim && anim.anchor === 'synopsis' ? (
+                <p
+                  className={`text-[14px] leading-5 text-[#0f172a] ${
+                    anim.phase === 'out' ? 'apple-text-out' : 'apple-text-in apple-shimmer'
+                  }`}
+                  style={{ fontFamily: 'var(--font-inter)' }}
+                  aria-hidden
+                >
+                  {anim.phase === 'out' ? anim.oldText : anim.newText}
+                </p>
+              ) : inlineMarkers.some(m => m.anchor === 'synopsis') ? (
+                <p className="text-[14px] leading-5 text-[#0f172a]" style={{ fontFamily: 'var(--font-inter)' }}>
+                  <MarkedText
+                    text={synopsis}
+                    markers={inlineMarkers.filter(m => m.anchor === 'synopsis')}
+                    activeKey={popover?.markerKey}
+                    onMarkerClick={openMarkerPopover}
+                  />
+                </p>
+              ) : (
+                <textarea
+                  value={synopsis}
+                  onChange={e => setSynopsis(e.target.value)}
+                  rows={2}
+                  className="w-full resize-none bg-transparent outline-none text-[14px] leading-5 text-[#0f172a]"
+                  style={{ fontFamily: 'var(--font-inter)' }}
+                />
+              )}
+            </FieldGroup>
+
+            <FieldGroup eyebrow="Cover Image" noBorder>
+              <CoverImage />
+            </FieldGroup>
+
+            <FieldGroup eyebrow="Description" noBorder>
+              <div className="flex flex-col gap-3 pt-1">
+                {paragraphs.map((p, i) => {
+                  const isAnim = anim && anim.anchor === `p${i}`
+                  const text = isAnim
+                    ? (anim!.phase === 'out' ? anim!.oldText : anim!.newText)
+                    : p
+                  const animClass = isAnim
+                    ? (anim!.phase === 'out' ? 'apple-text-out' : 'apple-text-in apple-shimmer')
+                    : ''
+                  const pMarkers = inlineMarkers.filter(m => m.anchor === `p${i}`)
+                  const isEditing = editingParagraph === i
+                  if (isEditing && !isAnim) {
+                    return (
+                      <AutoTextarea
+                        key={i}
+                        value={p}
+                        onChange={(v) => {
+                          setParagraphs(prev => {
+                            const next = [...prev]
+                            next[i] = v
+                            return next
+                          })
+                        }}
+                        onBlur={() => setEditingParagraph(null)}
+                        autoFocus
+                      />
+                    )
+                  }
+                  return (
+                    <p
+                      key={i}
+                      className={`text-[16px] leading-[1.6] text-[#262626] cursor-text ${animClass}`}
+                      style={{ fontFamily: 'var(--font-dm-sans)', fontVariationSettings: '"opsz" 14' }}
+                      onClick={(e) => {
+                        const target = e.target as HTMLElement
+                        if (target.closest('[data-berry-marker]')) return
+                        if (isAnim) return
+                        setEditingParagraph(i)
+                      }}
+                    >
+                      {isAnim || pMarkers.length === 0 ? text : (
+                        <MarkedText
+                          text={text}
+                          markers={pMarkers}
+                          activeKey={popover?.markerKey}
+                          onMarkerClick={openMarkerPopover}
+                        />
+                      )}
+                    </p>
+                  )
+                })}
+              </div>
+            </FieldGroup>
+
+            <div className="h-32" />
+          </div>
+        </article>
+      </main>
+
+      {/* Persistent Berry Review panel */}
+      <BerryReviewPanel
+        reviewState={reviewState}
+        openIssues={openIssues}
+        openSuggestions={openSuggestions}
+        appliedFixes={appliedFixes}
+        pendingCount={pendingCount}
+        sendable={sendable}
+        revisions={revisions}
+        activeRevIdx={activeRevIdx}
+        isLive={isLive}
+        categories={categories}
+        primaryCategory={primaryCategory}
+        onSelectRevision={setActiveRevIdx}
+        onStartReview={startReview}
+        onResolveIssue={resolveIssue}
+        onToggleCategory={toggleCategory}
+        onSetPrimaryCategory={setPrimary}
+        onRemoveCategory={removeCategory}
+        onAcceptSuggestion={acceptSuggestion}
+        onRejectSuggestion={rejectSuggestion}
+        onSend={sendToEditor}
+      />
+
+      {popover && (() => {
+        const marker = inlineMarkers.find(m => m.key === popover.markerKey)
+        if (!marker) return null
+        const useVariations =
+          (marker.fix?.id === 'headline' || marker.fix?.id === 'synopsis') &&
+          marker.fix &&
+          marker.changeIndex !== undefined
+        if (useVariations) {
+          const change = marker.fix!.changes[marker.changeIndex!]
+          if (change.kind === 'replace') {
+            const options = [change.after, ...(change.alternatives ?? [])]
+            return (
+              <VariationPopover
+                rect={popover.rect}
+                eyebrow={marker.eyebrow}
+                options={options}
+                onPick={(val) => acceptFromMarker(marker, val)}
+                onClose={() => setPopover(null)}
+              />
+            )
+          }
+        }
+        return (
+          <InlineMarkerPopover
+            rect={popover.rect}
+            eyebrow={marker.eyebrow}
+            summary={marker.summary}
+            actionLabel={marker.actionLabel}
+            tone={marker.tone}
+            disabled={marker.tone === 'critical' && !marker.fix}
+            onAction={() => acceptFromMarker(marker)}
+            onClose={() => setPopover(null)}
+          />
+        )
+      })()}
+    </div>
+  )
+}
+
+/* ───────────────────────────────────────────────────────────────────────────
+   Berry Review Panel — persistent right column
+   ─────────────────────────────────────────────────────────────────────────── */
+
+function BerryReviewPanel({
+  reviewState, openIssues, openSuggestions, appliedFixes, pendingCount, sendable,
+  revisions, activeRevIdx, isLive, categories, primaryCategory, onSelectRevision,
+  onStartReview, onResolveIssue, onToggleCategory, onSetPrimaryCategory, onRemoveCategory,
+  onAcceptSuggestion, onRejectSuggestion, onSend,
+}: {
+  reviewState: ReviewState
+  openIssues: Issue[]
+  openSuggestions: AutoFix[]
+  appliedFixes: AutoFix[]
+  pendingCount: number
+  sendable: boolean
+  revisions: Revision[]
+  activeRevIdx: number
+  isLive: boolean
+  categories: string[]
+  primaryCategory: string | null
+  onSelectRevision: (idx: number) => void
+  onStartReview: () => void
+  onResolveIssue: (id: string) => void
+  onToggleCategory: (issueId: string, value: string) => void
+  onSetPrimaryCategory: (value: string) => void
+  onRemoveCategory: (value: string) => void
+  onAcceptSuggestion: (f: AutoFix) => void
+  onRejectSuggestion: (f: AutoFix) => void
+  onSend: () => void
+}) {
+  return (
+    <aside className="shrink-0 mt-[10px] mr-[10px] mb-[10px] ml-[10px] w-[380px] backdrop-blur-[60px] bg-[rgba(255,255,255,0.65)] border border-black/5 rounded-[14px] shadow-[0px_0px_16px_0px_rgba(0,0,0,0.02)] flex flex-col overflow-hidden">
+
+      {/* Panel header */}
+      <div className="border-b border-slate-200 flex items-center gap-2.5 h-[62px] px-4 shrink-0">
+        <span className="relative shrink-0 inline-flex items-center justify-center size-7 rounded-[8px] bg-gradient-to-br from-[#0787ff] to-[#7c3aed] text-white">
+          <Sparkles size={14} strokeWidth={2} className="berry-sparkle" />
+        </span>
+        <div className="flex-1 min-w-0">
+          <p className="text-[15px] font-medium leading-5 text-[#0f172a]" style={{ fontFamily: 'var(--font-inter)' }}>
+            Berry Review
+          </p>
+          <p className="text-[11.5px] text-slate-500 leading-tight" style={{ fontFamily: 'var(--font-inter)' }}>
+            {reviewState === 'idle' ? 'Not yet reviewed' :
+             reviewState === 'reviewing' ? 'Reviewing your story' :
+             pendingCount > 0 ? `${pendingCount} pending` : 'All clear'}
+          </p>
+        </div>
+      </div>
+
+      {/* Scroll area */}
+      <div className="flex-1 overflow-y-auto">
+        {revisions.length > 0 && (
+          <RevisionHistoryStrip
+            revisions={revisions}
+            activeRevIdx={activeRevIdx}
+            onSelect={onSelectRevision}
+          />
+        )}
+        {reviewState === 'idle' && <EmptyState onStart={onStartReview} />}
+        {reviewState === 'reviewing' && <ReviewingState />}
+        {reviewState === 'reviewed' && (
+          <ReviewedContent
+            openIssues={openIssues}
+            openSuggestions={openSuggestions}
+            appliedFixes={appliedFixes}
+            pendingCount={pendingCount}
+            sendable={sendable}
+            readOnly={!isLive}
+            categories={categories}
+            primaryCategory={primaryCategory}
+            onResolveIssue={onResolveIssue}
+            onToggleCategory={onToggleCategory}
+            onSetPrimaryCategory={onSetPrimaryCategory}
+            onRemoveCategory={onRemoveCategory}
+            onAcceptSuggestion={onAcceptSuggestion}
+            onRejectSuggestion={onRejectSuggestion}
+            onSend={onSend}
+          />
+        )}
+      </div>
+    </aside>
+  )
+}
+
+function EmptyState({ onStart }: { onStart: () => void }) {
+  return (
+    <div className="px-5 py-10 flex flex-col items-center text-center gap-4 berry-fade-in">
+      <div className="size-14 rounded-[16px] bg-gradient-to-br from-[#0787ff]/12 to-[#7c3aed]/14 inline-flex items-center justify-center">
+        <Sparkles size={22} strokeWidth={1.5} className="text-[#7c3aed]" />
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <p className="text-[15px] font-medium text-[#0f172a]" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+          Berry hasn't reviewed yet
+        </p>
+        <p className="text-[12.5px] leading-[1.55] text-slate-500 max-w-[260px]" style={{ fontFamily: 'var(--font-inter)' }}>
+          Push for review when you're ready. Berry will check your story and surface anything that needs your attention here.
+        </p>
+      </div>
+      <button
+        type="button"
+        onClick={onStart}
+        className="relative inline-flex items-center justify-center gap-1.5 mt-1 min-h-[34px] px-4 rounded-[10px] overflow-hidden hover:brightness-110 transition-[filter]"
+      >
+        <span aria-hidden className="absolute inset-0 bg-gradient-to-br from-[#0787ff] to-[#7c3aed] rounded-[10px]" />
+        <span aria-hidden className="absolute inset-0 rounded-[10px] shadow-[inset_0_1px_0_rgba(255,255,255,0.22)]" />
+        <span className="relative text-[13px] font-semibold text-white" style={{ fontFamily: 'var(--font-inter)' }}>
+          Push for Review
+        </span>
+      </button>
+    </div>
+  )
+}
+
+function ReviewingState() {
+  return (
+    <div className="px-5 py-10 flex flex-col items-center text-center gap-4 berry-fade-in">
+      <span className="relative inline-flex items-center justify-center size-14 rounded-[16px] bg-gradient-to-br from-[#0787ff]/10 to-[#7c3aed]/12">
+        <span aria-hidden className="absolute inset-0 rounded-[16px] border-[1.5px] border-transparent border-t-[#7c3aed] animate-spin" />
+        <Sparkles size={20} strokeWidth={1.75} className="text-[#7c3aed] berry-sparkle" />
+      </span>
+      <div className="flex flex-col gap-1.5">
+        <p className="text-[15px] font-medium text-[#0f172a]" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+          Berry is reviewing…
+        </p>
+        <p className="text-[12.5px] leading-[1.55] text-slate-500 max-w-[260px]" style={{ fontFamily: 'var(--font-inter)' }}>
+          Checking grammar, sources, attribution, and publication readiness.
+        </p>
+      </div>
+    </div>
+  )
+}
+
+function ReviewedContent({
+  openIssues, openSuggestions, appliedFixes, pendingCount, sendable, readOnly,
+  categories, primaryCategory,
+  onResolveIssue, onToggleCategory, onSetPrimaryCategory, onRemoveCategory,
+  onAcceptSuggestion, onRejectSuggestion, onSend,
+}: {
+  openIssues: Issue[]
+  openSuggestions: AutoFix[]
+  appliedFixes: AutoFix[]
+  pendingCount: number
+  sendable: boolean
+  readOnly: boolean
+  categories: string[]
+  primaryCategory: string | null
+  onResolveIssue: (id: string) => void
+  onToggleCategory: (issueId: string, value: string) => void
+  onSetPrimaryCategory: (value: string) => void
+  onRemoveCategory: (value: string) => void
+  onAcceptSuggestion: (f: AutoFix) => void
+  onRejectSuggestion: (f: AutoFix) => void
+  onSend: () => void
+}) {
+  return (
+    <div className="flex flex-col berry-fade-in">
+
+      {readOnly && (
+        <div className="mx-4 mt-3 mb-0 rounded-[10px] border border-slate-200 bg-slate-50/80 px-3 py-2 text-[11.5px] text-slate-500 leading-[1.45]" style={{ fontFamily: 'var(--font-inter)' }}>
+          Viewing an earlier review. Switch to the latest revision to make changes.
+        </div>
+      )}
+
+      {/* Top status */}
+      <StatusBlock pendingCount={pendingCount} sendable={sendable} readOnly={readOnly} onSend={onSend} />
+
+      {/* Needs Attention */}
+      {openIssues.length > 0 && (
+        <Section title="Needs Attention" count={openIssues.length}>
+          {openIssues.map(issue => (
+            <NeedsAttentionCard
+              key={issue.id}
+              issue={issue}
+              readOnly={readOnly}
+              categories={categories}
+              primaryCategory={primaryCategory}
+              onResolve={() => onResolveIssue(issue.id)}
+              onToggleCategory={(v) => onToggleCategory(issue.id, v)}
+              onSetPrimaryCategory={onSetPrimaryCategory}
+              onRemoveCategory={onRemoveCategory}
+            />
+          ))}
+        </Section>
+      )}
+
+      {/* Suggestions */}
+      {openSuggestions.length > 0 && (
+        <Section title="Suggestions" count={openSuggestions.length}>
+          {openSuggestions.map(fix => (
+            <SuggestionCard
+              key={fix.id}
+              fix={fix}
+              readOnly={readOnly}
+              onAccept={() => onAcceptSuggestion(fix)}
+              onReject={() => onRejectSuggestion(fix)}
+            />
+          ))}
+        </Section>
+      )}
+
+      {/* Fixed by Berry */}
+      <FixedByBerry fixes={appliedFixes} />
+
+      {/* Sources */}
+      <SourcesBlock />
+
+      <div className="h-6" />
+    </div>
+  )
+}
+
+function StatusBlock({ pendingCount, sendable, readOnly, onSend }: { pendingCount: number; sendable: boolean; readOnly?: boolean; onSend: () => void }) {
+  const ready = pendingCount === 0
+  void readOnly
+  return (
+    <div className="px-4 pt-4 pb-4 border-b border-slate-200/80">
+      <div className="rounded-[12px] border border-slate-200 bg-white px-4 py-3.5 flex flex-col gap-3">
+        <div className="flex items-start gap-2.5">
+          <span className={`mt-0.5 inline-flex items-center justify-center size-7 rounded-[8px] shrink-0 ${
+            ready
+              ? 'bg-emerald-50 text-emerald-600'
+              : 'bg-amber-50 text-amber-600'
+          }`}>
+            {ready
+              ? <Check size={14} strokeWidth={2.5} />
+              : <span className="text-[12px] font-semibold leading-none">{pendingCount}</span>}
+          </span>
+          <div className="flex-1 min-w-0">
+            <p className="text-[13.5px] font-semibold leading-[1.35] text-[#0f172a]" style={{ fontFamily: 'var(--font-inter)' }}>
+              {ready
+                ? 'Ready for Editorial Review'
+                : `${pendingCount} ${pendingCount === 1 ? 'decision requires' : 'decisions require'} attention`}
+            </p>
+            <p className="mt-0.5 text-[12px] leading-[1.45] text-slate-500" style={{ fontFamily: 'var(--font-inter)' }}>
+              Estimated review time: 30 seconds
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          disabled={!sendable}
+          onClick={onSend}
+          className="relative inline-flex items-center justify-center gap-1.5 w-full min-h-[36px] rounded-[10px] overflow-hidden transition-[filter,opacity] disabled:opacity-45 disabled:cursor-not-allowed enabled:hover:brightness-110"
+        >
+          <span aria-hidden className={`absolute inset-0 rounded-[10px] ${
+            sendable
+              ? 'bg-gradient-to-br from-emerald-500 to-emerald-600'
+              : 'bg-[#0f172a]'
+          }`} />
+          <span aria-hidden className="absolute inset-0 rounded-[10px] shadow-[inset_0_1px_0_rgba(255,255,255,0.22)]" />
+          <span className="relative text-[13px] font-semibold text-white tracking-[-0.005em]" style={{ fontFamily: 'var(--font-inter)' }}>
+            Send to Editor
+          </span>
+          <ArrowRight size={13} strokeWidth={2.25} className="relative text-white" />
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function Section({ title, count, children }: { title: string; count?: number; children: React.ReactNode }) {
+  return (
+    <section className="px-4 pt-4 pb-1 flex flex-col gap-2.5">
+      <div className="flex items-baseline gap-2 px-0.5">
+        <span
+          className="text-[10.5px] font-semibold uppercase tracking-[0.16em] text-slate-500"
+          style={{ fontFamily: 'var(--font-inter)' }}
+        >
+          {title}
+        </span>
+        {typeof count === 'number' && (
+          <span className="text-[10.5px] font-medium text-slate-400" style={{ fontFamily: 'var(--font-inter)' }}>
+            · {count}
+          </span>
+        )}
+      </div>
+      <div className="flex flex-col gap-2">{children}</div>
+    </section>
+  )
+}
+
+function NeedsAttentionCard({
+  issue, readOnly, categories, primaryCategory,
+  onResolve, onToggleCategory, onSetPrimaryCategory, onRemoveCategory,
+}: {
+  issue: Issue
+  readOnly?: boolean
+  categories: string[]
+  primaryCategory: string | null
+  onResolve: () => void
+  onToggleCategory: (value: string) => void
+  onSetPrimaryCategory: (value: string) => void
+  onRemoveCategory: (value: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [value, setValue] = useState('')
+  const [catQuery, setCatQuery] = useState('')
+  const isCategory = issue.kind === 'category'
+
+  const filteredCats = CATEGORY_OPTIONS.filter(c =>
+    c.toLowerCase().includes(catQuery.trim().toLowerCase())
+  )
+
+  return (
+    <div className="rounded-[12px] border border-slate-200 bg-white overflow-hidden hover:border-slate-300 transition-colors">
+      <div className="p-3.5 flex flex-col gap-2.5">
+        <div className="flex items-start gap-2.5">
+          <span className="mt-1.5 size-[7px] rounded-full bg-rose-500 shrink-0" />
+          <div className="flex-1 min-w-0">
+            <span
+              className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-slate-500"
+              style={{ fontFamily: 'var(--font-inter)' }}
+            >
+              {issue.eyebrow}
+            </span>
+            <p
+              className="mt-0.5 text-[13.5px] leading-[1.4] font-medium text-[#0f172a]"
+              style={{ fontFamily: 'var(--font-inter)' }}
+            >
+              {issue.title}
+            </p>
+            {issue.body && (
+              <p className="mt-1 text-[12px] leading-[1.5] text-[#64748b]" style={{ fontFamily: 'var(--font-inter)' }}>
+                {issue.body}
+              </p>
+            )}
+          </div>
+        </div>
+
+        {!open && (
+          <div className="flex justify-end">
+            <button
+              type="button"
+              disabled={readOnly}
+              onClick={() => setOpen(true)}
+              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-[8px] bg-[#0f172a] text-white text-[12px] font-semibold hover:brightness-110 transition-[filter] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:brightness-100"
+              style={{ fontFamily: 'var(--font-inter)' }}
+            >
+              {issue.action}
+            </button>
+          </div>
+        )}
+
+        {open && isCategory && (
+          <div className="flex flex-col gap-2 berry-row-in">
+            {categories.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {categories.map(c => {
+                  const isPrimary = primaryCategory === c
+                  return (
+                    <span
+                      key={c}
+                      className={`inline-flex items-center gap-1 px-2 py-1 rounded-[8px] text-[11.5px] font-medium border ${
+                        isPrimary
+                          ? 'border-[#0f172a] bg-[#0f172a] text-white'
+                          : 'border-slate-200 bg-white text-[#0f172a]'
+                      }`}
+                      style={{ fontFamily: 'var(--font-inter)' }}
+                    >
+                      <button
+                        type="button"
+                        title={isPrimary ? 'Primary category' : 'Set as primary'}
+                        disabled={readOnly}
+                        onClick={() => onSetPrimaryCategory(c)}
+                        className={`leading-none ${isPrimary ? 'text-amber-300' : 'text-slate-400 hover:text-amber-500'}`}
+                      >
+                        {isPrimary ? '★' : '☆'}
+                      </button>
+                      <span>{c}</span>
+                      <button
+                        type="button"
+                        disabled={readOnly}
+                        onClick={() => onRemoveCategory(c)}
+                        className={`leading-none ml-0.5 ${isPrimary ? 'text-white/70 hover:text-white' : 'text-slate-400 hover:text-slate-700'}`}
+                        aria-label={`Remove ${c}`}
+                      >
+                        ×
+                      </button>
+                    </span>
+                  )
+                })}
+              </div>
+            )}
+            <input
+              type="text"
+              value={catQuery}
+              onChange={e => setCatQuery(e.target.value)}
+              placeholder="Search categories…"
+              className="w-full px-3 py-2 rounded-[8px] border border-slate-200 bg-white text-[12.5px] text-[#0f172a] outline-none focus:border-[#0787ff] focus:ring-2 focus:ring-[#0787ff]/15 transition-[box-shadow,border-color]"
+              style={{ fontFamily: 'var(--font-inter)' }}
+            />
+            <div className="max-h-[240px] overflow-y-auto rounded-[8px] border border-slate-200 bg-white">
+              {filteredCats.length === 0 && (
+                <p className="px-3 py-3 text-[12px] text-slate-400" style={{ fontFamily: 'var(--font-inter)' }}>
+                  No matches
+                </p>
+              )}
+              {filteredCats.map(opt => {
+                const selected = categories.includes(opt)
+                return (
+                  <button
+                    key={opt}
+                    type="button"
+                    disabled={readOnly}
+                    onClick={() => onToggleCategory(opt)}
+                    className={`w-full flex items-center justify-between px-3 py-2 text-left text-[12.5px] border-b border-slate-100 last:border-b-0 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed ${
+                      selected ? 'text-[#0f172a] font-medium' : 'text-slate-700'
+                    }`}
+                    style={{ fontFamily: 'var(--font-inter)' }}
+                  >
+                    <span>{opt}</span>
+                    {selected && <Check size={12} strokeWidth={2.5} className="text-emerald-600" />}
+                  </button>
+                )
+              })}
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] text-slate-400 tabular-nums" style={{ fontFamily: 'var(--font-inter)' }}>
+                {categories.length} selected
+              </span>
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                className="text-[12px] font-medium text-slate-500 hover:text-slate-900 px-2.5 py-1.5 transition-colors"
+                style={{ fontFamily: 'var(--font-inter)' }}
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        )}
+
+        {open && !isCategory && (
+          <div className="flex flex-col gap-2 berry-row-in">
+            <input
+              type="text"
+              value={value}
+              onChange={e => setValue(e.target.value)}
+              placeholder={
+                issue.id === 'src-1'
+                  ? 'Paste a source URL or DOI…'
+                  : 'Name the speaker (e.g., गीता लामा)'
+              }
+              autoFocus
+              className="w-full px-3 py-2 rounded-[10px] border border-slate-200 bg-slate-50/60 text-[13px] text-[#0f172a] outline-none focus:border-[#0787ff] focus:ring-2 focus:ring-[#0787ff]/15 transition-[box-shadow,border-color]"
+              style={{ fontFamily: 'var(--font-inter)' }}
+            />
+            <div className="flex items-center justify-end gap-1.5">
+              <button
+                type="button"
+                onClick={() => { setOpen(false); setValue('') }}
+                className="text-[12px] font-medium text-slate-500 hover:text-slate-900 px-2.5 py-1.5 transition-colors"
+                style={{ fontFamily: 'var(--font-inter)' }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={onResolve}
+                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-[8px] bg-[#0f172a] text-white text-[12px] font-semibold hover:brightness-110 transition-[filter]"
+                style={{ fontFamily: 'var(--font-inter)' }}
+              >
+                Resolve
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function SuggestionCard({ fix, readOnly, onAccept, onReject }: { fix: AutoFix; readOnly?: boolean; onAccept: () => void; onReject: () => void }) {
+  const [previewing, setPreviewing] = useState(false)
+  const firstReplace = fix.changes.find(c => c.kind === 'replace') as
+    Extract<FixChange, { kind: 'replace' }> | undefined
+  const extraCount = Math.max(0, fix.changes.filter(c => c.kind === 'replace').length - 1)
+
+  return (
+    <div className="rounded-[12px] border border-slate-200 bg-white overflow-hidden hover:border-slate-300 transition-colors">
+      <div className="p-3.5 flex flex-col gap-2.5">
+        <div className="flex items-start gap-2.5">
+          <span className="mt-1 inline-flex items-center justify-center size-[18px] rounded-full bg-[#7c3aed]/10 text-[#7c3aed] shrink-0">
+            <Sparkles size={10} strokeWidth={2} />
+          </span>
+          <div className="flex-1 min-w-0">
+            <p
+              className="text-[13.5px] leading-[1.4] font-medium text-[#0f172a]"
+              style={{ fontFamily: 'var(--font-inter)' }}
+            >
+              {fix.label}
+            </p>
+            {fix.detail && (
+              <p className="mt-0.5 text-[12px] leading-[1.5] text-[#64748b]" style={{ fontFamily: 'var(--font-inter)' }}>
+                {fix.detail}
+              </p>
+            )}
+          </div>
+        </div>
+
+        {!previewing && (
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={() => setPreviewing(true)}
+              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-[8px] bg-white border border-slate-200 text-[12px] font-medium text-[#0f172a] hover:bg-slate-50 transition-colors"
+              style={{ fontFamily: 'var(--font-inter)' }}
+            >
+              Preview Suggestion
+            </button>
+          </div>
+        )}
+
+        {previewing && firstReplace && (
+          <div className="flex flex-col gap-2 berry-row-in">
+            {firstReplace.where && (
+              <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400" style={{ fontFamily: 'var(--font-inter)' }}>
+                {firstReplace.where}
+              </span>
+            )}
+            <div className="flex flex-col gap-1.5">
+              <div className="rounded-[8px] border border-slate-150 bg-slate-50/70 px-2.5 py-1.5">
+                <p className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-slate-400 mb-0.5" style={{ fontFamily: 'var(--font-inter)' }}>
+                  Current
+                </p>
+                <p className="text-[12.5px] leading-[1.5] text-slate-700" style={{ fontFamily: 'var(--font-inter)' }}>
+                  {firstReplace.before}
+                </p>
+              </div>
+              <div className="rounded-[8px] border border-emerald-100 bg-emerald-50/60 px-2.5 py-1.5">
+                <p className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-emerald-700 mb-0.5" style={{ fontFamily: 'var(--font-inter)' }}>
+                  Suggested
+                </p>
+                <p className="text-[12.5px] leading-[1.5] text-emerald-900" style={{ fontFamily: 'var(--font-inter)' }}>
+                  {firstReplace.after}
+                </p>
+              </div>
+              {extraCount > 0 && (
+                <p className="text-[11px] text-slate-400 px-0.5" style={{ fontFamily: 'var(--font-inter)' }}>
+                  + {extraCount} more similar {extraCount === 1 ? 'change' : 'changes'} in this group
+                </p>
+              )}
+            </div>
+            <div className="flex items-center justify-end gap-1.5 pt-0.5">
+              <button
+                type="button"
+                disabled={readOnly}
+                onClick={onReject}
+                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-[8px] text-[12px] font-medium text-slate-600 hover:bg-slate-100 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                style={{ fontFamily: 'var(--font-inter)' }}
+              >
+                Reject
+              </button>
+              <button
+                type="button"
+                disabled={readOnly}
+                onClick={onAccept}
+                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-[8px] bg-[#0f172a] text-white text-[12px] font-semibold hover:brightness-110 transition-[filter] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:brightness-100"
+                style={{ fontFamily: 'var(--font-inter)' }}
+              >
+                Accept
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function FixedByBerry({ fixes }: { fixes: AutoFix[] }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <section className="px-4 pt-4 pb-1">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className="flex items-center justify-between w-full px-0.5 group"
+      >
+        <div className="flex items-baseline gap-2">
+          <span
+            className="text-[10.5px] font-semibold uppercase tracking-[0.16em] text-slate-500"
+            style={{ fontFamily: 'var(--font-inter)' }}
+          >
+            Fixed by Berry
+          </span>
+          <span className="text-[10.5px] font-medium text-slate-400" style={{ fontFamily: 'var(--font-inter)' }}>
+            · {fixes.length}
+          </span>
+        </div>
+        <ChevronRight
+          size={12}
+          strokeWidth={2}
+          className={`text-slate-400 transition-transform ${open ? 'rotate-90' : ''}`}
+        />
+      </button>
+      {open && (
+        <div className="mt-2.5 rounded-[12px] border border-slate-200 bg-white px-3 py-2.5 flex flex-col gap-1.5 berry-row-in">
+          {fixes.map(fix => (
+            <div key={fix.id} className="flex items-center gap-2.5 py-1">
+              <span className="inline-flex items-center justify-center size-[16px] rounded-full bg-emerald-50 text-emerald-600 shrink-0">
+                <Check size={10} strokeWidth={2.75} />
+              </span>
+              <span className="text-[12.5px] text-[#0f172a] leading-[1.4]" style={{ fontFamily: 'var(--font-inter)' }}>
+                {fix.label}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  )
+}
+
+function SourcesBlock() {
+  return (
+    <section className="px-4 pt-4 pb-1 flex flex-col gap-2.5">
+      <div className="flex items-baseline justify-between px-0.5">
+        <div className="flex items-baseline gap-2">
+          <span
+            className="text-[10.5px] font-semibold uppercase tracking-[0.16em] text-slate-500"
+            style={{ fontFamily: 'var(--font-inter)' }}
+          >
+            Sources
+          </span>
+          <span className="text-[10.5px] font-medium text-slate-400" style={{ fontFamily: 'var(--font-inter)' }}>
+            · {SOURCES.length}
+          </span>
+        </div>
+        <button
+          type="button"
+          className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-500 hover:text-slate-900 transition-colors"
+          style={{ fontFamily: 'var(--font-inter)' }}
+        >
+          <Plus size={11} strokeWidth={2.25} /> Add
+        </button>
+      </div>
+      <div className="flex flex-col gap-1.5">
+        {SOURCES.map((s, i) => (
+          <SourceCard key={i} title={s.title} domain={s.domain} initial={s.initial} />
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function SourceCard({ title, domain, initial }: { title: string; domain: string; initial: string }) {
+  return (
+    <div className="flex items-center gap-2.5 px-2.5 py-2 rounded-[10px] border border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/40 transition-colors">
+      <div className="size-7 rounded-[8px] bg-gradient-to-br from-sky-100 to-violet-100 inline-flex items-center justify-center text-[11.5px] font-semibold text-slate-700 shrink-0" style={{ fontFamily: 'var(--font-inter)' }}>
+        {initial}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-[12.5px] font-medium leading-[1.35] text-[#0f172a] truncate" style={{ fontFamily: 'var(--font-inter)' }}>
+          {title}
+        </p>
+        <p className="text-[11px] text-slate-500 truncate flex items-center gap-1" style={{ fontFamily: 'var(--font-inter)' }}>
+          <Globe size={9} strokeWidth={2} className="opacity-70" />
+          {domain}
+        </p>
+      </div>
+    </div>
+  )
+}
+
+/* ───────────────────────────────────────────────────────────────────────────
+   Article primitives
+   ─────────────────────────────────────────────────────────────────────────── */
+
+function FieldGroup({
+  eyebrow, helper, counter, collapsible, noBorder, children,
+}: {
+  eyebrow: string
+  helper?: string
+  counter?: string
+  collapsible?: boolean
+  noBorder?: boolean
+  children: React.ReactNode
+}) {
+  return (
+    <section className={`relative flex flex-col gap-3 w-full ${noBorder ? '' : 'border-b border-[#e4e4e7] pb-[14px]'}`}>
+      <div className="flex items-center gap-2">
+        <span
+          className="text-[12px] font-medium leading-[14px] uppercase text-[#4d4d56]"
+          style={{ fontFamily: 'var(--font-inter)' }}
+        >
+          {eyebrow}
+        </span>
+        {collapsible && <ChevronDown size={14} strokeWidth={1.75} className="text-slate-500" />}
+      </div>
+      {children}
+      {(helper || counter) && (
+        <div className="flex items-center justify-between">
+          {helper && <span className="text-[12px] leading-[14px] text-[#737373]" style={{ fontFamily: 'var(--font-inter)' }}>{helper}</span>}
+          {counter && <span className="text-[12px] leading-[14px] text-[#4d4d56]" style={{ fontFamily: 'var(--font-inter)' }}>{counter}</span>}
+        </div>
+      )}
+    </section>
+  )
+}
+
+function CoverImage() {
+  return (
+    <div className="w-[310px] h-[178px] rounded-[10px] overflow-hidden border border-slate-300 relative">
+      <div className="absolute inset-0 bg-gradient-to-br from-slate-300 to-slate-200" />
+      <div className="relative h-full flex items-end justify-start p-3">
+        <span
+          className="text-[11px] font-medium uppercase tracking-[0.14em] text-white/95 px-2 py-1 rounded-md bg-black/30 backdrop-blur"
+          style={{ fontFamily: 'var(--font-inter)' }}
+        >
+          Cover photo
+        </span>
+      </div>
+    </div>
+  )
+}
+
+/* ───────────────────────────────────────────────────────────────────────────
+   Sidebar + Buttons + Styles
+   ─────────────────────────────────────────────────────────────────────────── */
+
+function CollapsedSidebar() {
+  const items = [
+    { Icon: LayoutDashboard }, { Icon: MessageSquareText }, { Icon: MessageSquare },
+    { Icon: ListChecks }, { Icon: Clock }, { Icon: Layers }, { Icon: Users },
+    { Icon: Wrench }, { Icon: Settings },
+  ]
+  return (
+    <nav className="shrink-0 mt-[10px] mb-[10px] ml-[10px] mr-[10px] w-[60px] backdrop-blur-[60px] bg-[rgba(255,255,255,0.5)] border border-black/5 rounded-[16px] shadow-[0px_0px_16px_0px_rgba(0,0,0,0.02)] flex flex-col gap-4 items-center px-3 py-4">
+      <div className="size-8 rounded-lg bg-gradient-to-br from-[#0787ff] to-[#7c3aed] inline-flex items-center justify-center text-white text-[13px] font-semibold">
+        S
+      </div>
+      <div className="h-px w-full bg-slate-200" />
+      <button className="size-9 rounded-lg bg-white border border-slate-200 inline-flex items-center justify-center shadow-sm">
+        <Plus size={16} strokeWidth={1.75} className="text-slate-700" />
+      </button>
+      <div className="flex flex-col gap-1">
+        {items.map(({ Icon }, i) => (
+          <button key={i} className="size-9 rounded-lg inline-flex items-center justify-center text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-colors">
+            <Icon size={18} strokeWidth={1.5} />
+          </button>
+        ))}
+      </div>
+      <div className="mt-auto flex flex-col gap-1">
+        <button className="size-9 rounded-lg inline-flex items-center justify-center text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-colors">
+          <Newspaper size={18} strokeWidth={1.5} />
+        </button>
+        <button className="size-9 rounded-lg inline-flex items-center justify-center text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-colors">
+          <SquarePen size={18} strokeWidth={1.5} />
+        </button>
+      </div>
+    </nav>
+  )
+}
+
+function GhostBtn({ children, onClick }: { children: React.ReactNode; onClick?: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="inline-flex items-center justify-center gap-1.5 min-h-[32px] px-3 rounded-[8px] text-[13.5px] font-medium text-[#334155] hover:bg-slate-100 transition-colors"
+      style={{ fontFamily: 'var(--font-inter)' }}
+    >
+      {children}
+    </button>
+  )
+}
+
+function OutlineBtn({ children, onClick, small }: { children: React.ReactNode; onClick?: () => void; small?: boolean }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`inline-flex items-center justify-center gap-1.5 ${small ? 'min-h-[28px] px-2.5 text-[12.5px]' : 'min-h-[32px] px-3 text-[13.5px]'} rounded-[8px] bg-white border border-slate-300 text-[#020617] font-medium shadow-[0_1px_8px_0_rgba(0,0,0,0.05)] hover:bg-slate-50 transition-colors`}
+      style={{ fontFamily: 'var(--font-inter)' }}
+    >
+      {children}
+    </button>
+  )
+}
+
+function PrimaryBtn({ children, onClick }: { children: React.ReactNode; onClick?: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="relative inline-flex items-center justify-center gap-1.5 min-h-[32px] px-3 rounded-[8px] overflow-hidden hover:brightness-110 transition-[filter]"
+    >
+      <span aria-hidden className="absolute inset-0 bg-gradient-to-br from-[#0787ff] to-[#7c3aed] rounded-[8px]" />
+      <span aria-hidden className="absolute inset-0 pointer-events-none rounded-[8px] shadow-[inset_0px_0px_4px_0px_rgba(255,255,255,0.24)]" />
+      <span className="relative inline-flex items-center gap-1.5 text-[13.5px] font-medium leading-5 text-white" style={{ fontFamily: 'var(--font-inter)' }}>
+        <Sparkles size={13} strokeWidth={2} />
+        {children}
+      </span>
+    </button>
+  )
+}
+
+function formatRelativeTime(ts: number): string {
+  const diff = Math.max(0, Date.now() - ts)
+  const sec = Math.floor(diff / 1000)
+  if (sec < 30) return 'just now'
+  if (sec < 90) return '1m ago'
+  const min = Math.floor(sec / 60)
+  if (min < 60) return `${min}m ago`
+  const hr = Math.floor(min / 60)
+  if (hr < 24) return `${hr}h ago`
+  const day = Math.floor(hr / 24)
+  return `${day}d ago`
+}
+
+function RevisionHistoryStrip({
+  revisions, activeRevIdx, onSelect,
+}: {
+  revisions: Revision[]
+  activeRevIdx: number
+  onSelect: (idx: number) => void
+}) {
+  const ordered = revisions.map((r, idx) => ({ r, idx })).slice().reverse()
+  return (
+    <div className="px-4 pt-3 pb-2 border-b border-slate-200/80">
+      <div className="flex items-center gap-1.5 mb-2 px-0.5">
+        <span
+          className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500"
+          style={{ fontFamily: 'var(--font-inter)' }}
+        >
+          History
+        </span>
+        <span className="text-[10px] font-medium text-slate-400" style={{ fontFamily: 'var(--font-inter)' }}>
+          · {revisions.length}
+        </span>
+      </div>
+      <div className="flex items-center gap-1.5 flex-wrap">
+        {ordered.map(({ r, idx }) => {
+          const active = idx === activeRevIdx
+          return (
+            <button
+              key={r.id}
+              type="button"
+              onClick={() => onSelect(idx)}
+              className={`inline-flex items-center gap-1.5 h-[24px] px-2 rounded-full border text-[11px] transition-colors ${
+                active
+                  ? 'bg-[#0f172a] border-[#0f172a] text-white'
+                  : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:text-slate-900'
+              }`}
+              style={{ fontFamily: 'var(--font-inter)' }}
+              aria-pressed={active}
+            >
+              <span className="font-semibold">Review {r.id}</span>
+              <span className={active ? 'text-white/70' : 'text-slate-400'}>·</span>
+              <span className={active ? 'text-white/85' : 'text-slate-500'}>
+                {formatRelativeTime(r.timestamp)}
+              </span>
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function MarkedText({
+  text, markers, activeKey, onMarkerClick,
+}: {
+  text: string
+  markers: InlineMarker[]
+  activeKey?: string
+  onMarkerClick: (key: string, el: HTMLElement) => void
+}) {
+  type Seg = { start: number; end: number; marker: InlineMarker }
+  const segs: Seg[] = []
+  markers.forEach(m => {
+    if (!m.phrase) return
+    const idx = text.indexOf(m.phrase)
+    if (idx < 0) return
+    segs.push({ start: idx, end: idx + m.phrase.length, marker: m })
+  })
+  segs.sort((a, b) => a.start - b.start)
+  // Drop overlaps (keep first)
+  const filtered: Seg[] = []
+  let lastEnd = -1
+  for (const s of segs) {
+    if (s.start >= lastEnd) { filtered.push(s); lastEnd = s.end }
+  }
+  if (filtered.length === 0) return <>{text}</>
+
+  const out: React.ReactNode[] = []
+  let cursor = 0
+  filtered.forEach((s, i) => {
+    if (s.start > cursor) out.push(<span key={`t-${i}`}>{text.slice(cursor, s.start)}</span>)
+    const active = activeKey === s.marker.key
+    const isSuggestion = s.marker.tone === 'suggestion'
+    const cls = isSuggestion
+      ? `cursor-pointer berry-marker-suggestion ${active ? 'berry-marker-suggestion-active' : ''}`
+      : `cursor-pointer berry-marker-critical ${active ? 'berry-marker-critical-active' : ''}`
+    out.push(
+      <span
+        key={`m-${i}`}
+        data-berry-marker
+        className={cls}
+        onClick={e => onMarkerClick(s.marker.key, e.currentTarget as HTMLElement)}
+      >
+        {text.slice(s.start, s.end)}
+      </span>
+    )
+    cursor = s.end
+  })
+  if (cursor < text.length) out.push(<span key="tail">{text.slice(cursor)}</span>)
+  return <>{out}</>
+}
+
+function usePopoverPlacement(rect: { top: number; bottom: number }, estimatedHeight: number) {
+  const gap = 6
+  const vh = typeof window !== 'undefined' ? window.innerHeight : 800
+  const spaceBelow = vh - rect.bottom
+  const placeBelow = spaceBelow >= estimatedHeight + gap || spaceBelow >= rect.top
+  const top = placeBelow ? rect.bottom + gap : rect.top - gap
+  const transform = placeBelow ? 'translate(-50%, 0)' : 'translate(-50%, -100%)'
+  return { top, transform, placeBelow }
+}
+
+function InlineMarkerPopover({
+  rect, eyebrow, summary, actionLabel, tone, disabled, onAction, onClose,
+}: {
+  rect: { left: number; top: number; bottom: number; width: number }
+  eyebrow: string
+  summary: string
+  actionLabel: string
+  tone: 'suggestion' | 'critical'
+  disabled?: boolean
+  onAction: () => void
+  onClose: () => void
+}) {
+  const eyebrowColor = tone === 'critical' ? 'text-rose-600' : 'text-[#7c3aed]'
+  const accentBtn = tone === 'critical'
+    ? 'bg-rose-600 hover:brightness-110'
+    : 'bg-[#0f172a] hover:brightness-110'
+  const { top, transform, placeBelow } = usePopoverPlacement(rect, 60)
+  return (
+    <div
+      data-berry-popover
+      className="fixed z-50 berry-popover-in"
+      style={{ left: rect.left, top, transform }}
+    >
+      <div className="rounded-[10px] bg-white border border-slate-200 shadow-[0_10px_30px_-8px_rgba(15,23,42,0.18),0_2px_6px_-2px_rgba(15,23,42,0.08)] px-3 py-2 flex items-center gap-2.5 min-w-[240px] max-w-[320px]">
+        <div className="flex-1 min-w-0">
+          <p className={`text-[10px] font-semibold uppercase tracking-[0.14em] ${eyebrowColor}`} style={{ fontFamily: 'var(--font-inter)' }}>
+            {eyebrow}
+          </p>
+          <p className="text-[12.5px] leading-[1.4] text-[#0f172a] truncate" style={{ fontFamily: 'var(--font-inter)' }}>
+            {summary}
+          </p>
+        </div>
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={onAction}
+          className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-[7px] text-white text-[11.5px] font-semibold transition-[filter] disabled:opacity-40 disabled:cursor-not-allowed ${accentBtn}`}
+          style={{ fontFamily: 'var(--font-inter)' }}
+        >
+          {actionLabel}
+        </button>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close"
+          className="inline-flex items-center justify-center size-5 rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors text-[12px] leading-none"
+        >
+          ×
+        </button>
+      </div>
+      <div
+        className={`absolute left-1/2 -translate-x-1/2 size-[10px] rotate-45 bg-white ${
+          placeBelow
+            ? '-top-[5px] border-l border-t border-slate-200'
+            : '-bottom-[5px] border-r border-b border-slate-200'
+        }`}
+      />
+    </div>
+  )
+}
+
+function VariationPopover({
+  rect, eyebrow, options, onPick, onClose,
+}: {
+  rect: { left: number; top: number; bottom: number; width: number }
+  eyebrow: string
+  options: string[]
+  onPick: (value: string) => void
+  onClose: () => void
+}) {
+  const [selected, setSelected] = useState(0)
+  const { top, transform, placeBelow } = usePopoverPlacement(rect, 220)
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowDown') { e.preventDefault(); setSelected(s => Math.min(options.length - 1, s + 1)) }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); setSelected(s => Math.max(0, s - 1)) }
+      else if (e.key === 'Enter') { e.preventDefault(); onPick(options[selected]) }
+      else if (e.key === 'Escape') { e.preventDefault(); onClose() }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [options, selected, onPick, onClose])
+
+  return (
+    <div
+      data-berry-popover
+      className="fixed z-50 berry-popover-in"
+      style={{ left: rect.left, top, transform }}
+    >
+      <div className="rounded-[12px] bg-white border border-slate-200 shadow-[0_10px_30px_-8px_rgba(15,23,42,0.18),0_2px_6px_-2px_rgba(15,23,42,0.08)] w-[360px] overflow-hidden">
+        <div className="flex items-center justify-between px-3 pt-2.5 pb-2 border-b border-slate-100">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#737373]" style={{ fontFamily: 'var(--font-inter)' }}>
+            {eyebrow}
+          </p>
+          <p className="text-[10px] text-slate-400" style={{ fontFamily: 'var(--font-inter)' }}>
+            <span className="tabular-nums">▲ ▼</span> to navigate · <span className="tabular-nums">↵</span> to select · esc to close
+          </p>
+        </div>
+        <div className="p-1.5 flex flex-col gap-1 max-h-[280px] overflow-y-auto">
+          {options.map((opt, i) => {
+            const isSelected = i === selected
+            return (
+              <button
+                key={i}
+                type="button"
+                onMouseEnter={() => setSelected(i)}
+                onClick={() => onPick(opt)}
+                className={`w-full text-left rounded-full px-3 py-2 flex items-start gap-2.5 transition-colors ${
+                  isSelected
+                    ? 'bg-[#0787ff]/8 text-[#0f172a]'
+                    : 'hover:bg-slate-50 text-[#0f172a]'
+                }`}
+                style={{ fontFamily: 'var(--font-inter)' }}
+              >
+                <span className={`mt-0.5 text-[12px] leading-none shrink-0 ${isSelected ? 'text-[#0787ff]' : 'text-slate-400'}`}>
+                  →
+                </span>
+                <span className="text-[12.5px] leading-[1.5]">{opt}</span>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+      <div
+        className={`absolute left-1/2 -translate-x-1/2 size-[10px] rotate-45 bg-white ${
+          placeBelow
+            ? '-top-[5px] border-l border-t border-slate-200'
+            : '-bottom-[5px] border-r border-b border-slate-200'
+        }`}
+      />
+    </div>
+  )
+}
+
+function AutoTextarea({
+  value, onChange, onBlur, autoFocus,
+}: {
+  value: string
+  onChange: (v: string) => void
+  onBlur?: () => void
+  autoFocus?: boolean
+}) {
+  const ref = useRef<HTMLTextAreaElement | null>(null)
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = el.scrollHeight + 'px'
+  }, [value])
+  return (
+    <textarea
+      ref={ref}
+      value={value}
+      autoFocus={autoFocus}
+      onBlur={onBlur}
+      onChange={e => onChange(e.target.value)}
+      className="w-full resize-none bg-transparent outline-none text-[16px] leading-[1.6] text-[#262626]"
+      style={{ fontFamily: 'var(--font-dm-sans)', fontVariationSettings: '"opsz" 14' }}
+    />
+  )
+}
+
+function V8Styles() {
+  return (
+    <style jsx global>{`
+      @keyframes berry-sparkle {
+        0%, 100% { transform: rotate(-6deg) scale(1); opacity: 1; }
+        50%      { transform: rotate(6deg)  scale(1.08); opacity: 0.9; }
+      }
+      .berry-sparkle { animation: berry-sparkle 2.4s ease-in-out infinite; }
+
+      @keyframes berry-fade-in {
+        from { opacity: 0; transform: translateY(4px); }
+        to   { opacity: 1; transform: translateY(0); }
+      }
+      .berry-fade-in { animation: berry-fade-in 280ms cubic-bezier(0.22,1,0.36,1) both; }
+
+      @keyframes berry-row-in {
+        from { opacity: 0; transform: translateY(-2px); }
+        to   { opacity: 1; transform: translateY(0); }
+      }
+      .berry-row-in { animation: berry-row-in 180ms ease-out both; }
+
+      @keyframes apple-text-out {
+        0%   { opacity: 1; filter: blur(0px);    transform: translateY(0); }
+        100% { opacity: 0; filter: blur(4px);    transform: translateY(-2px); }
+      }
+      .apple-text-out {
+        animation: apple-text-out 300ms cubic-bezier(0.4,0,0.2,1) both;
+        will-change: opacity, filter, transform;
+      }
+
+      @keyframes apple-text-in {
+        0%   { opacity: 0; filter: blur(4px);    transform: translateY(2px); }
+        100% { opacity: 1; filter: blur(0px);    transform: translateY(0); }
+      }
+      .apple-text-in {
+        animation: apple-text-in 600ms cubic-bezier(0.22,1,0.36,1) both;
+        will-change: opacity, filter, transform;
+      }
+
+      .berry-marker-suggestion {
+        text-decoration: underline wavy rgba(124,58,237,0.55);
+        text-decoration-thickness: 1.5px;
+        text-underline-offset: 3px;
+        transition: background-color 140ms ease, text-decoration-color 140ms ease;
+        border-radius: 2px;
+        padding: 0 1px;
+      }
+      .berry-marker-suggestion:hover {
+        background-color: rgba(124,58,237,0.07);
+        text-decoration-color: rgba(124,58,237,0.85);
+      }
+      .berry-marker-suggestion-active {
+        background-color: rgba(124,58,237,0.10);
+        text-decoration-color: rgba(124,58,237,0.95);
+      }
+      .berry-marker-critical {
+        background-color: rgba(254,243,199,0.55);
+        box-shadow: inset 0 -1.5px 0 rgba(217,119,6,0.55);
+        border-radius: 2px;
+        padding: 0 2px;
+        transition: background-color 140ms ease, box-shadow 140ms ease;
+      }
+      .berry-marker-critical:hover {
+        background-color: rgba(254,243,199,0.85);
+        box-shadow: inset 0 -1.5px 0 rgba(217,119,6,0.85);
+      }
+      .berry-marker-critical-active {
+        background-color: rgba(254,243,199,0.95);
+        box-shadow: inset 0 -1.5px 0 rgba(217,119,6,0.95);
+      }
+
+      @keyframes berry-popover-in {
+        from { opacity: 0; }
+        to   { opacity: 1; }
+      }
+      .berry-popover-in { animation: berry-popover-in 140ms cubic-bezier(0.22,1,0.36,1) both; }
+
+      @keyframes apple-shimmer-sweep {
+        0%   { background-position: -120% 0; }
+        100% { background-position: 220% 0; }
+      }
+      .apple-shimmer {
+        background-image: linear-gradient(
+          100deg,
+          #0f172a 0%,
+          #0f172a 38%,
+          rgba(124,58,237,0.95) 48%,
+          rgba(7,135,255,0.95) 54%,
+          #0f172a 64%,
+          #0f172a 100%
+        );
+        background-size: 220% 100%;
+        background-repeat: no-repeat;
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+        animation:
+          apple-text-in 600ms cubic-bezier(0.22,1,0.36,1) both,
+          apple-shimmer-sweep 700ms cubic-bezier(0.4,0,0.2,1) 60ms both;
+      }
+    `}</style>
+  )
+}
