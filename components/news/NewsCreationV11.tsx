@@ -21,9 +21,10 @@ import { useRouter } from 'next/navigation'
 import {
   ArrowLeft, ArrowRight, Check, ChevronDown, ChevronRight, Search,
   Plus, FileText, Image as ImageIcon, Quote, Type, Heading1, Heading2,
-  List, Link2, Sparkles, X, LayoutDashboard, Newspaper,
-  FilePen, Layers, ListChecks, Folder, BarChart3, Image as MediaIcon,
-  Users, Wrench, Settings, Pin, ListFilter, Clock, Tag,
+  List, Link2, Sparkles, X, LayoutDashboard,
+  ListChecks, BarChart3, Image as MediaIcon,
+  Users, Wrench, Pin, Clock, Tag,
+  MessageSquare, MessageSquareText,
 } from 'lucide-react'
 
 /* ───────────────────────────────────────────────────────────────────────────
@@ -341,115 +342,58 @@ export default function NewsCreationV11() {
    ─────────────────────────────────────────────────────────────────────────── */
 
 function Sidebar() {
-  const [expanded, setExpanded] = useState(false)
-  const items: { Icon: typeof LayoutDashboard; label: string }[] = [
-    { Icon: LayoutDashboard, label: 'Dashboard' },
-    { Icon: Newspaper,       label: 'News' },
-    { Icon: FilePen,         label: 'Drafts' },
-    { Icon: ListFilter,      label: 'Category' },
-    { Icon: Layers,          label: 'Series' },
-    { Icon: Folder,          label: 'Archived' },
-    { Icon: ListChecks,      label: 'Tasks' },
-    { Icon: BarChart3,       label: 'Performance' },
-    { Icon: MediaIcon,       label: 'Media' },
-    { Icon: Users,           label: 'People' },
-  ]
-  const footer: { Icon: typeof Wrench; label: string }[] = [
-    { Icon: Wrench,   label: 'Site config' },
-    { Icon: Settings, label: 'Settings' },
+  // Order mirrors Figma node 1:599: Home, +, Message, Chat, Checklist,
+  // Gauge, Media, Users, Wrench.
+  const items: { Icon: typeof LayoutDashboard; label: string; active?: boolean }[] = [
+    { Icon: MessageSquareText, label: 'Stories' },
+    { Icon: MessageSquare,     label: 'Chats' },
+    { Icon: ListChecks,        label: 'Tasks' },
+    { Icon: BarChart3,         label: 'Performance' },
+    { Icon: MediaIcon,         label: 'Media' },
+    { Icon: Users,             label: 'People' },
+    { Icon: Wrench,            label: 'Settings' },
   ]
   return (
-    <nav
-      className={`shrink-0 mt-[14px] mb-[14px] ml-[14px] mr-[14px] bg-white border border-[#e6ecf4] rounded-[20px] shadow-[0px_24px_60px_-20px_rgba(31,57,99,0.10),0px_2px_6px_-2px_rgba(31,57,99,0.04)] flex flex-col gap-4 ${expanded ? 'items-stretch px-3 py-5' : 'items-center px-3 py-5'} overflow-hidden`}
-      style={{
-        width: expanded ? 224 : 64,
-        transition: 'width 260ms cubic-bezier(0.22,1,0.36,1)',
-      }}
-    >
-      {/* Brand — click to toggle */}
+    <nav className="shrink-0 self-center ml-5 mr-3 flex flex-col gap-2.5">
+      {/* 1. Home / Dashboard — active */}
+      <SideItem Icon={LayoutDashboard} label="Dashboard" active />
+
+      {/* 2. + New article — solid brand pill */}
       <button
         type="button"
-        onClick={() => setExpanded(v => !v)}
-        className="flex items-center gap-2.5 h-9 rounded-[12px] hover:bg-[#f3f6fb] transition-colors px-1 -mx-1"
-        aria-label={expanded ? 'Collapse sidebar' : 'Expand sidebar'}
+        aria-label="New article"
+        className="size-11 rounded-full bg-[#0787FF] inline-flex items-center justify-center shadow-[0_10px_24px_-8px_rgba(7,135,255,0.5),inset_0_1px_0_rgba(255,255,255,0.3)] hover:brightness-105 active:scale-95 transition-[filter,transform]"
       >
-        <span className="size-9 rounded-[12px] bg-[#0f172a] inline-flex items-center justify-center text-white text-[14px] font-bold tracking-tight shrink-0">
-          S
-        </span>
-        {expanded && (
-          <span
-            className="text-[15px] font-bold tracking-tight text-[#0f172a] whitespace-nowrap v11-side-fade"
-            style={{ fontFamily: 'var(--font-urbanist)' }}
-          >
-            Snowberry
-          </span>
-        )}
+        <Plus size={18} strokeWidth={2.5} className="text-white" />
       </button>
 
-      <div className={`h-px bg-[#e6ecf4] ${expanded ? 'w-full' : 'w-8 mx-auto'}`} />
-
-      {/* New article CTA */}
-      <button
-        type="button"
-        className={`group inline-flex items-center gap-2.5 h-9 rounded-[12px] bg-[#0787FF] shadow-[0px_8px_18px_-6px_rgba(7,135,255,0.45)] hover:brightness-105 transition-[filter] ${expanded ? 'justify-start px-2.5' : 'justify-center w-9 self-center'}`}
-      >
-        <Plus size={16} strokeWidth={2.5} className="text-white shrink-0" />
-        {expanded && (
-          <span
-            className="text-[13px] font-semibold text-white tracking-tight v11-side-fade"
-            style={{ fontFamily: 'var(--font-urbanist)' }}
-          >
-            New Article
-          </span>
-        )}
-      </button>
-
-      {/* Main items */}
-      <div className="flex flex-col gap-1">
-        {items.map(({ Icon, label }, i) => (
-          <SideItem key={i} Icon={Icon} label={label} expanded={expanded} active={i === 0} />
-        ))}
-      </div>
-
-      {/* Footer items */}
-      <div className="mt-auto flex flex-col gap-1">
-        {footer.map(({ Icon, label }, i) => (
-          <SideItem key={i} Icon={Icon} label={label} expanded={expanded} />
-        ))}
-      </div>
+      {/* 3–9. rest */}
+      {items.map(({ Icon, label, active }, i) => (
+        <SideItem key={i} Icon={Icon} label={label} active={active} />
+      ))}
     </nav>
   )
 }
 
 function SideItem({
-  Icon, label, expanded, active,
+  Icon, label, active,
 }: {
   Icon: typeof LayoutDashboard
   label: string
-  expanded: boolean
   active?: boolean
 }) {
   return (
     <button
       type="button"
-      title={expanded ? undefined : label}
-      className={`group flex items-center gap-2.5 h-9 rounded-[11px] transition-colors ${
-        expanded ? 'justify-start px-2.5 w-full' : 'justify-center w-9 self-center'
-      } ${
+      title={label}
+      aria-label={label}
+      className={`size-11 rounded-full inline-flex items-center justify-center transition-[background-color,color,border-color,transform] active:scale-95 ${
         active
-          ? 'bg-[#DBEAFE] text-[#0787FF]'
-          : 'text-[#94a3b8] hover:bg-[#f3f6fb] hover:text-[#0f172a]'
+          ? 'bg-[#DBEAFE] text-[#0787FF] border border-[#bfdbfe] shadow-[inset_0_1px_0_rgba(255,255,255,0.6)]'
+          : 'bg-white/55 backdrop-blur-[14px] border border-white/65 text-[#475569] hover:bg-white/90 hover:text-[#0f172a] hover:border-white shadow-[inset_0_1px_0_rgba(255,255,255,0.5)]'
       }`}
     >
-      <Icon size={18} strokeWidth={1.75} className="shrink-0" />
-      {expanded && (
-        <span
-          className="text-[13px] font-medium tracking-tight whitespace-nowrap v11-side-fade"
-          style={{ fontFamily: 'var(--font-urbanist)' }}
-        >
-          {label}
-        </span>
-      )}
+      <Icon size={18} strokeWidth={2} />
     </button>
   )
 }
