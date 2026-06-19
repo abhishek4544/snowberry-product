@@ -1544,36 +1544,115 @@ function CoverImage() {
    ─────────────────────────────────────────────────────────────────────────── */
 
 function CollapsedSidebar() {
-  const items = [
-    { Icon: LayoutDashboard }, { Icon: MessageSquareText }, { Icon: MessageSquare },
-    { Icon: ListChecks }, { Icon: Clock }, { Icon: Layers }, { Icon: Users },
-    { Icon: Wrench }, { Icon: Settings },
+  const [expanded, setExpanded] = useState(false)
+  const items: { Icon: typeof LayoutDashboard; label: string }[] = [
+    { Icon: LayoutDashboard,   label: 'Dashboard' },
+    { Icon: MessageSquareText, label: 'Stories' },
+    { Icon: MessageSquare,     label: 'Messages' },
+    { Icon: ListChecks,        label: 'Tasks' },
+    { Icon: Clock,             label: 'History' },
+    { Icon: Layers,            label: 'Sections' },
+    { Icon: Users,             label: 'Team' },
+    { Icon: Wrench,            label: 'Tools' },
+    { Icon: Settings,          label: 'Settings' },
+  ]
+  const footer: { Icon: typeof Newspaper; label: string }[] = [
+    { Icon: Newspaper, label: 'Newsroom' },
+    { Icon: SquarePen, label: 'Compose' },
   ]
   return (
-    <nav className="shrink-0 mt-[14px] mb-[14px] ml-[14px] mr-[14px] w-[64px] bg-white border border-[#e6ecf4] rounded-[20px] shadow-[0px_24px_60px_-20px_rgba(31,57,99,0.10),0px_2px_6px_-2px_rgba(31,57,99,0.04)] flex flex-col gap-4 items-center px-3 py-5">
-      <div className="size-9 rounded-[12px] bg-[#0f172a] inline-flex items-center justify-center text-white text-[14px] font-bold tracking-tight">
-        S
-      </div>
-      <div className="h-px w-8 bg-[#e6ecf4]" />
-      <button className="size-9 rounded-[12px] bg-[#F04B2A] inline-flex items-center justify-center shadow-[0px_8px_18px_-6px_rgba(240,75,42,0.45)]">
-        <Plus size={16} strokeWidth={2.25} className="text-white" />
+    <nav
+      className={`shrink-0 mt-[14px] mb-[14px] ml-[14px] mr-[14px] bg-white border border-[#e6ecf4] rounded-[20px] shadow-[0px_24px_60px_-20px_rgba(31,57,99,0.10),0px_2px_6px_-2px_rgba(31,57,99,0.04)] flex flex-col gap-4 ${expanded ? 'items-stretch px-3 py-5' : 'items-center px-3 py-5'} overflow-hidden`}
+      style={{
+        width: expanded ? 224 : 64,
+        transition: 'width 260ms cubic-bezier(0.22,1,0.36,1)',
+      }}
+    >
+      {/* Brand row — click to toggle */}
+      <button
+        type="button"
+        onClick={() => setExpanded(v => !v)}
+        className="flex items-center gap-2.5 h-9 rounded-[12px] hover:bg-[#f3f6fb] transition-colors px-1 -mx-1"
+        aria-label={expanded ? 'Collapse sidebar' : 'Expand sidebar'}
+      >
+        <span className="size-9 rounded-[12px] bg-[#0f172a] inline-flex items-center justify-center text-white text-[14px] font-bold tracking-tight shrink-0">
+          S
+        </span>
+        {expanded && (
+          <span
+            className="text-[15px] font-bold tracking-tight text-[#0f172a] whitespace-nowrap v10-side-fade"
+            style={{ fontFamily: 'var(--font-urbanist)' }}
+          >
+            Snowberry
+          </span>
+        )}
       </button>
+
+      <div className={`h-px bg-[#e6ecf4] ${expanded ? 'w-full' : 'w-8 mx-auto'}`} />
+
+      {/* New / primary CTA */}
+      <button
+        type="button"
+        className={`group inline-flex items-center gap-2.5 h-9 rounded-[12px] bg-[#F04B2A] shadow-[0px_8px_18px_-6px_rgba(240,75,42,0.45)] hover:brightness-105 transition-[filter] ${expanded ? 'justify-start px-2.5' : 'justify-center w-9 self-center'}`}
+      >
+        <Plus size={16} strokeWidth={2.5} className="text-white shrink-0" />
+        {expanded && (
+          <span
+            className="text-[13px] font-semibold text-white tracking-tight v10-side-fade"
+            style={{ fontFamily: 'var(--font-urbanist)' }}
+          >
+            New Story
+          </span>
+        )}
+      </button>
+
+      {/* Main items */}
       <div className="flex flex-col gap-1">
-        {items.map(({ Icon }, i) => (
-          <button key={i} className="size-9 rounded-[11px] inline-flex items-center justify-center text-[#94a3b8] hover:bg-[#f3f6fb] hover:text-[#0f172a] transition-colors">
-            <Icon size={18} strokeWidth={1.5} />
-          </button>
+        {items.map(({ Icon, label }, i) => (
+          <SidebarItem key={i} Icon={Icon} label={label} expanded={expanded} active={i === 1} />
         ))}
       </div>
+
+      {/* Footer items */}
       <div className="mt-auto flex flex-col gap-1">
-        <button className="size-9 rounded-[11px] inline-flex items-center justify-center text-[#94a3b8] hover:bg-[#f3f6fb] hover:text-[#0f172a] transition-colors">
-          <Newspaper size={18} strokeWidth={1.5} />
-        </button>
-        <button className="size-9 rounded-[11px] inline-flex items-center justify-center text-[#94a3b8] hover:bg-[#f3f6fb] hover:text-[#0f172a] transition-colors">
-          <SquarePen size={18} strokeWidth={1.5} />
-        </button>
+        {footer.map(({ Icon, label }, i) => (
+          <SidebarItem key={i} Icon={Icon} label={label} expanded={expanded} />
+        ))}
       </div>
     </nav>
+  )
+}
+
+function SidebarItem({
+  Icon, label, expanded, active,
+}: {
+  Icon: typeof LayoutDashboard
+  label: string
+  expanded: boolean
+  active?: boolean
+}) {
+  return (
+    <button
+      type="button"
+      title={expanded ? undefined : label}
+      className={`group flex items-center gap-2.5 h-9 rounded-[11px] transition-colors ${
+        expanded ? 'justify-start px-2.5 w-full' : 'justify-center w-9 self-center'
+      } ${
+        active
+          ? 'bg-[#f3f6fb] text-[#0f172a]'
+          : 'text-[#94a3b8] hover:bg-[#f3f6fb] hover:text-[#0f172a]'
+      }`}
+    >
+      <Icon size={18} strokeWidth={1.75} className="shrink-0" />
+      {expanded && (
+        <span
+          className="text-[13px] font-medium tracking-tight whitespace-nowrap v10-side-fade"
+          style={{ fontFamily: 'var(--font-urbanist)' }}
+        >
+          {label}
+        </span>
+      )}
+    </button>
   )
 }
 
@@ -1914,6 +1993,12 @@ function V10Styles() {
         50%      { transform: rotate(6deg)  scale(1.08); opacity: 0.9; }
       }
       .berry-sparkle { animation: berry-sparkle 2.4s ease-in-out infinite; }
+
+      @keyframes v10-side-fade {
+        from { opacity: 0; transform: translateX(-4px); }
+        to   { opacity: 1; transform: translateX(0); }
+      }
+      .v10-side-fade { animation: v10-side-fade 220ms cubic-bezier(0.22,1,0.36,1) 80ms both; }
 
       @keyframes berry-fade-in {
         from { opacity: 0; transform: translateY(4px); }
