@@ -26,6 +26,7 @@ const VERSIONS: Version[] = [
   { id: 'v5', label: 'v5', tag: 'Berry AI',     note: 'AI-first vibrant theme',           date: 'Jun 15, 2026', route: '/news/new-v5' },
   { id: 'v8',  label: 'v8',  tag: 'Berry Review',   note: 'Persistent two-column review',       date: 'Jun 17, 2026', route: '/news/new-v8' },
   { id: 'v10', label: 'v10', tag: 'Dashboard Soft', note: 'Urbanist + soft-blue dashboard skin', date: 'Jun 19, 2026', route: '/news/new-v10' },
+  { id: 'v11', label: 'v11', tag: 'Figma Flow',     note: 'Full Figma flow reskinned (cards + Berry review)', date: 'Jun 19, 2026', route: '/news/new-v11' },
 ]
 
 const TAG_COLORS: Record<string, string> = {
@@ -36,6 +37,7 @@ const TAG_COLORS: Record<string, string> = {
   'Berry AI':     '#7c3aed',
   'Berry Review': '#7c3aed',
   'Dashboard Soft': '#F04B2A',
+  'Figma Flow':     '#F04B2A',
 }
 
 /** Pick the version whose route best matches the current pathname.
