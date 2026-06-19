@@ -25,6 +25,7 @@ import {
   ListChecks, BarChart3, Image as MediaIcon,
   Users, Wrench, Pin, Clock, Tag,
   MessageSquare, MessageSquareText,
+  Trash2, Send, ChevronUp,
 } from 'lucide-react'
 
 /* ───────────────────────────────────────────────────────────────────────────
@@ -94,6 +95,12 @@ const AI_CHECKS: CheckResult[] = [
 
 type Mode = 'editing' | 'reviewing' | 'reviewed'
 
+type PopoverRect = { left: number; top: number; width?: number }
+type InlinePopover =
+  | { kind: 'block'; insertAt: number; rect: PopoverRect }
+  | { kind: 'ai';    cardId: string;   rect: PopoverRect }
+  | null
+
 export default function NewsCreationV11() {
   const router = useRouter()
 
@@ -102,7 +109,7 @@ export default function NewsCreationV11() {
   const [focusedCard, setFocusedCard] = useState<string | null>(null)
   const [detailsOpen, setDetailsOpen] = useState(false)
   const [imagePickerFor, setImagePickerFor] = useState<string | null>(null)
-  const [blockPickerOpen, setBlockPickerOpen] = useState(false)
+  const [inlinePopover, setInlinePopover] = useState<InlinePopover>(null)
   const [categoryPickerOpen, setCategoryPickerOpen] = useState(false)
   const [resolvedChecks, setResolvedChecks] = useState<Set<string>>(new Set())
 
@@ -123,15 +130,33 @@ export default function NewsCreationV11() {
     setCards(prev => prev.map(c => c.id === id ? { ...c, ...patch } : c))
   }
 
-  function addCard(kind: CardKind) {
+  function insertCardAt(insertAt: number, kind: CardKind) {
     const id = `c-${Date.now()}`
-    setCards(prev => [...prev, { id, kind, value: '' }])
-    setBlockPickerOpen(false)
+    setCards(prev => {
+      const next = [...prev]
+      const idx = Math.max(0, Math.min(insertAt, next.length))
+      next.splice(idx, 0, { id, kind, value: '' })
+      return next
+    })
+    setInlinePopover(null)
     setFocusedCard(id)
   }
 
   function removeCard(id: string) {
     setCards(prev => prev.filter(c => c.id !== id))
+    if (focusedCard === id) setFocusedCard(null)
+  }
+
+  function moveCard(id: string, delta: -1 | 1) {
+    setCards(prev => {
+      const i = prev.findIndex(c => c.id === id)
+      const j = i + delta
+      if (i < 0 || j < 0 || j >= prev.length) return prev
+      const next = [...prev]
+      const [moved] = next.splice(i, 1)
+      next.splice(j, 0, moved)
+      return next
+    })
   }
 
   function loadSample() {
@@ -157,6 +182,27 @@ export default function NewsCreationV11() {
   useEffect(() => {
     if (category) resolve('cat')
   }, [category])
+
+  useEffect(() => {
+    if (!inlinePopover) return
+    function onDown(e: MouseEvent) {
+      const target = e.target as HTMLElement
+      if (target.closest('[data-v11-popover]') || target.closest('[data-v11-popover-trigger]')) return
+      setInlinePopover(null)
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') setInlinePopover(null)
+    }
+    function onScroll() { setInlinePopover(null) }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    window.addEventListener('scroll', onScroll, true)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+      window.removeEventListener('scroll', onScroll, true)
+    }
+  }, [inlinePopover])
 
   return (
     <div
@@ -237,24 +283,47 @@ export default function NewsCreationV11() {
         {/* Body */}
         {mode === 'editing' && (
           <article className="flex-1 min-w-0 overflow-y-auto">
-            <div className="max-w-[820px] pl-12 pr-8 py-6 flex flex-col gap-2">
-              {cards.map(card => (
-                <CardRow
-                  key={card.id}
-                  card={card}
-                  focused={focusedCard === card.id}
-                  onFocus={() => setFocusedCard(card.id)}
-                  onBlur={() => setFocusedCard(null)}
-                  onChange={(v) => updateCard(card.id, { value: v })}
-                  onRemove={() => removeCard(card.id)}
-                  onPickImage={() => setImagePickerFor(card.id)}
-                />
+            <div className="max-w-[820px] pl-12 pr-8 py-6 flex flex-col">
+              <CardGap
+                index={0}
+                onInsert={(rect) => setInlinePopover({ kind: 'block', insertAt: 0, rect })}
+              />
+              {cards.map((card, i) => (
+                <div key={card.id}>
+                  <CardRow
+                    card={card}
+                    isFirst={i === 0}
+                    isLast={i === cards.length - 1}
+                    focused={focusedCard === card.id}
+                    onFocus={() => setFocusedCard(card.id)}
+                    onBlur={() => setFocusedCard(null)}
+                    onChange={(v) => updateCard(card.id, { value: v })}
+                    onRemove={() => removeCard(card.id)}
+                    onPickImage={() => setImagePickerFor(card.id)}
+                    onMoveUp={() => moveCard(card.id, -1)}
+                    onMoveDown={() => moveCard(card.id, 1)}
+                    onOpenAI={(rect) => setInlinePopover({ kind: 'ai', cardId: card.id, rect })}
+                    aiOpenFor={inlinePopover && inlinePopover.kind === 'ai' ? inlinePopover.cardId : null}
+                  />
+                  <CardGap
+                    index={i + 1}
+                    onInsert={(rect) => setInlinePopover({ kind: 'block', insertAt: i + 1, rect })}
+                  />
+                </div>
               ))}
 
               <button
                 type="button"
-                onClick={() => setBlockPickerOpen(true)}
-                className="mt-3 self-start inline-flex items-center gap-2 h-11 px-5 rounded-[14px] bg-white border border-dashed border-[#cfd9e8] text-[#475569] text-[13.5px] font-semibold tracking-tight hover:border-[#0787FF] hover:text-[#0787FF] hover:bg-[#eff6ff] transition-colors"
+                data-v11-popover-trigger
+                onClick={(e) => {
+                  const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                  setInlinePopover({
+                    kind: 'block',
+                    insertAt: cards.length,
+                    rect: { left: r.left, top: r.bottom + 8, width: r.width },
+                  })
+                }}
+                className="mt-2 self-start inline-flex items-center gap-2 h-11 px-5 rounded-[14px] bg-white border border-dashed border-[#cfd9e8] text-[#475569] text-[13.5px] font-semibold tracking-tight hover:border-[#0787FF] hover:text-[#0787FF] hover:bg-[#eff6ff] transition-colors"
               >
                 <Plus size={15} strokeWidth={2.25} /> Add new card
               </button>
@@ -317,11 +386,18 @@ export default function NewsCreationV11() {
         />
       )}
 
-      {/* Block picker */}
-      {blockPickerOpen && (
+      {/* Inline popovers (block picker + Berry AI) */}
+      {inlinePopover && inlinePopover.kind === 'block' && (
         <BlockPicker
-          onPick={(kind) => addCard(kind)}
-          onClose={() => setBlockPickerOpen(false)}
+          rect={inlinePopover.rect}
+          onPick={(kind) => insertCardAt(inlinePopover.insertAt, kind)}
+          onClose={() => setInlinePopover(null)}
+        />
+      )}
+      {inlinePopover && inlinePopover.kind === 'ai' && (
+        <BerryAIPanel
+          rect={inlinePopover.rect}
+          onClose={() => setInlinePopover(null)}
         />
       )}
 
@@ -383,18 +459,28 @@ function SideItem({
   active?: boolean
 }) {
   return (
-    <button
-      type="button"
-      title={label}
-      aria-label={label}
-      className={`size-11 rounded-full inline-flex items-center justify-center transition-[background-color,color,border-color,transform] active:scale-95 ${
-        active
-          ? 'bg-[#DBEAFE] text-[#0787FF] border border-[#bfdbfe] shadow-[inset_0_1px_0_rgba(255,255,255,0.6)]'
-          : 'bg-white/55 backdrop-blur-[14px] border border-white/65 text-[#475569] hover:bg-white/90 hover:text-[#0f172a] hover:border-white shadow-[inset_0_1px_0_rgba(255,255,255,0.5)]'
-      }`}
-    >
-      <Icon size={18} strokeWidth={2} />
-    </button>
+    <div className="group relative">
+      <button
+        type="button"
+        aria-label={label}
+        className={`size-11 rounded-full inline-flex items-center justify-center transition-[background-color,color,border-color,transform] active:scale-95 ${
+          active
+            ? 'bg-[#DBEAFE] text-[#0787FF] border border-[#bfdbfe] shadow-[inset_0_1px_0_rgba(255,255,255,0.6)]'
+            : 'bg-white/55 backdrop-blur-[14px] border border-white/65 text-[#475569] hover:bg-white/90 hover:text-[#0f172a] hover:border-white shadow-[inset_0_1px_0_rgba(255,255,255,0.5)]'
+        }`}
+      >
+        <Icon size={18} strokeWidth={2} />
+      </button>
+      {/* Tooltip */}
+      <span
+        role="tooltip"
+        className="pointer-events-none absolute left-full top-1/2 -translate-y-1/2 ml-2.5 px-2.5 py-1 rounded-[8px] bg-[#0f172a] text-white text-[11.5px] font-semibold tracking-tight whitespace-nowrap opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-[opacity,transform] duration-150 shadow-[0_6px_18px_-6px_rgba(15,23,42,0.45)]"
+        style={{ fontFamily: 'var(--font-urbanist)' }}
+      >
+        {label}
+        <span aria-hidden className="absolute -left-1 top-1/2 -translate-y-1/2 size-2 rotate-45 bg-[#0f172a]" />
+      </span>
+    </div>
   )
 }
 
@@ -403,56 +489,67 @@ function SideItem({
    ─────────────────────────────────────────────────────────────────────────── */
 
 function CardRow({
-  card, focused, onFocus, onBlur, onChange, onRemove, onPickImage,
+  card, focused, isFirst, isLast, onFocus, onBlur, onChange, onRemove,
+  onPickImage, onMoveUp, onMoveDown, onOpenAI, aiOpenFor,
 }: {
   card: Card
   focused: boolean
+  isFirst: boolean
+  isLast: boolean
   onFocus: () => void
   onBlur: () => void
   onChange: (v: string) => void
   onRemove: () => void
   onPickImage: () => void
+  onMoveUp: () => void
+  onMoveDown: () => void
+  onOpenAI: (rect: PopoverRect) => void
+  aiOpenFor: string | null
 }) {
   const Glyph = kindGlyph(card.kind)
+  const active = focused || aiOpenFor === card.id
+
+  function triggerAI(e: React.MouseEvent<HTMLElement>) {
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    onOpenAI({ left: r.right - 380, top: r.bottom + 8 })
+  }
+
   return (
     <div
       className={`group relative flex gap-3 px-3 py-3 -mx-3 rounded-[16px] transition-colors ${
-        focused ? 'bg-[#f7faff]' : 'hover:bg-[#f7faff]/60'
+        active ? 'bg-[#f1f5f9]' : 'hover:bg-[#f7faff]/70'
       }`}
       onMouseDown={onFocus}
     >
       {/* Gutter icon */}
       <div className="flex flex-col items-center pt-1 select-none">
         <div className={`size-8 rounded-[10px] inline-flex items-center justify-center transition-colors ${
-          focused ? 'bg-[#DBEAFE] text-[#0787FF]' : 'bg-[#f3f6fb] text-[#94a3b8] group-hover:text-[#475569]'
+          active ? 'bg-[#DBEAFE] text-[#0787FF]' : 'bg-[#f3f6fb] text-[#94a3b8] group-hover:text-[#475569]'
         }`}>
           <Glyph size={14} strokeWidth={2.25} />
         </div>
-        <div className={`flex-1 w-px mt-2 ${focused ? 'bg-[#0787FF]/30' : 'bg-transparent group-hover:bg-[#e6ecf4]'}`} />
       </div>
 
       {/* Body */}
       <div className="flex-1 min-w-0">
         {card.kind === 'heading' && (
-          <textarea
+          <AutoTextarea
             value={card.value}
             placeholder="Title"
             onFocus={onFocus}
             onBlur={onBlur}
-            onChange={e => onChange(e.target.value)}
-            rows={1}
-            className="w-full resize-none bg-transparent outline-none text-[32px] leading-[1.15] font-bold tracking-[-0.025em] text-[#0f172a] placeholder:text-[#cbd5e1]"
+            onChange={onChange}
+            className="text-[32px] leading-[1.15] font-bold tracking-[-0.025em] text-[#0f172a] placeholder:text-[#cbd5e1]"
           />
         )}
         {card.kind === 'subheading' && (
-          <textarea
+          <AutoTextarea
             value={card.value}
             placeholder="Sub-Title"
             onFocus={onFocus}
             onBlur={onBlur}
-            onChange={e => onChange(e.target.value)}
-            rows={1}
-            className="w-full resize-none bg-transparent outline-none text-[18px] leading-[1.4] font-semibold tracking-tight text-[#334155] placeholder:text-[#cbd5e1]"
+            onChange={onChange}
+            className="text-[18px] leading-[1.4] font-semibold tracking-tight text-[#334155] placeholder:text-[#cbd5e1]"
           />
         )}
         {card.kind === 'image' && (
@@ -464,25 +561,23 @@ function CardRow({
           />
         )}
         {card.kind === 'paragraph' && (
-          <textarea
+          <AutoTextarea
             value={card.value}
             placeholder="Description here.."
             onFocus={onFocus}
             onBlur={onBlur}
-            onChange={e => onChange(e.target.value)}
-            rows={3}
-            className="w-full resize-none bg-transparent outline-none text-[16px] leading-[1.7] text-[#1e293b] placeholder:text-[#cbd5e1]"
+            onChange={onChange}
+            className="text-[16px] leading-[1.7] text-[#1e293b] placeholder:text-[#cbd5e1]"
           />
         )}
         {card.kind === 'quote' && (
-          <textarea
+          <AutoTextarea
             value={card.value}
             placeholder="Pull quote…"
             onFocus={onFocus}
             onBlur={onBlur}
-            onChange={e => onChange(e.target.value)}
-            rows={2}
-            className="w-full resize-none bg-transparent outline-none text-[17px] leading-[1.5] font-medium italic text-[#0f172a] placeholder:text-[#cbd5e1] border-l-[3px] border-[#C4B5FD] pl-4"
+            onChange={onChange}
+            className="text-[17px] leading-[1.5] font-medium italic text-[#0f172a] placeholder:text-[#cbd5e1] border-l-[3px] border-[#C4B5FD] pl-4"
           />
         )}
         {card.kind === 'attachment' && (
@@ -500,17 +595,127 @@ function CardRow({
         )}
       </div>
 
-      {/* Hover controls */}
-      <div className={`absolute right-3 top-3 flex items-center gap-1 transition-opacity ${focused ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
-        <button
-          type="button"
-          onClick={onRemove}
-          aria-label="Remove card"
-          className="size-7 rounded-[8px] inline-flex items-center justify-center text-[#94a3b8] hover:bg-white hover:text-[#0787FF] transition-colors"
-        >
-          <X size={13} strokeWidth={2.25} />
-        </button>
-      </div>
+      {/* Right side toolbar */}
+      {active ? (
+        // Active = full toolbar
+        <div className="absolute right-3 top-3 flex items-center gap-1.5 v11-tool-in">
+          <button
+            type="button"
+            data-v11-popover-trigger
+            onClick={triggerAI}
+            className="relative inline-flex items-center gap-1.5 h-8 pl-2.5 pr-3 rounded-[10px] overflow-hidden hover:brightness-105 active:scale-[0.97] transition-[filter,transform]"
+            aria-label="Berry AI"
+          >
+            <span aria-hidden className="absolute inset-0 bg-gradient-to-br from-[#7DD3FC] to-[#0787FF] rounded-[10px]" />
+            <span aria-hidden className="absolute inset-0 rounded-[10px] shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_8px_18px_-6px_rgba(7,135,255,0.45)]" />
+            <span className="relative inline-flex items-center gap-1.5 text-[12px] font-semibold text-white tracking-tight">
+              Berry AI <Sparkles size={11} strokeWidth={2.5} />
+            </span>
+          </button>
+          <div className="flex items-center bg-white border border-[#e6ecf4] rounded-[10px] overflow-hidden shadow-[0_1px_2px_rgba(31,57,99,0.04)]">
+            <button
+              type="button"
+              onClick={onMoveUp}
+              disabled={isFirst}
+              aria-label="Move up"
+              className="size-8 inline-flex items-center justify-center text-[#475569] hover:bg-[#f7faff] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            >
+              <ChevronUp size={13} strokeWidth={2.25} />
+            </button>
+            <div className="w-px h-4 bg-[#eef2f7]" />
+            <button
+              type="button"
+              onClick={onMoveDown}
+              disabled={isLast}
+              aria-label="Move down"
+              className="size-8 inline-flex items-center justify-center text-[#475569] hover:bg-[#f7faff] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            >
+              <ChevronDown size={13} strokeWidth={2.25} />
+            </button>
+          </div>
+          <button
+            type="button"
+            onClick={onRemove}
+            aria-label="Remove card"
+            className="size-8 rounded-[10px] bg-white border border-[#e6ecf4] inline-flex items-center justify-center text-[#475569] hover:text-[#dc2626] hover:bg-[#fff5f5] hover:border-[#fecaca] shadow-[0_1px_2px_rgba(31,57,99,0.04)] transition-colors"
+          >
+            <Trash2 size={13} strokeWidth={2} />
+          </button>
+        </div>
+      ) : (
+        // Hover only = small Berry AI icon
+        <div className="absolute right-3 top-3 opacity-0 group-hover:opacity-100 transition-opacity">
+          <button
+            type="button"
+            data-v11-popover-trigger
+            onClick={triggerAI}
+            className="relative size-8 rounded-[10px] overflow-hidden inline-flex items-center justify-center hover:brightness-105 active:scale-95 transition-[filter,transform]"
+            aria-label="Berry AI"
+          >
+            <span aria-hidden className="absolute inset-0 bg-gradient-to-br from-[#7DD3FC] to-[#0787FF] rounded-[10px]" />
+            <span aria-hidden className="absolute inset-0 rounded-[10px] shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_8px_18px_-6px_rgba(7,135,255,0.45)]" />
+            <Sparkles size={13} strokeWidth={2.5} className="relative text-white" />
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function AutoTextarea({
+  value, placeholder, className, onFocus, onBlur, onChange,
+}: {
+  value: string
+  placeholder: string
+  className?: string
+  onFocus: () => void
+  onBlur: () => void
+  onChange: (v: string) => void
+}) {
+  const ref = useRef<HTMLTextAreaElement | null>(null)
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = el.scrollHeight + 'px'
+  }, [value])
+  return (
+    <textarea
+      ref={ref}
+      value={value}
+      placeholder={placeholder}
+      onFocus={onFocus}
+      onBlur={onBlur}
+      onChange={e => onChange(e.target.value)}
+      rows={1}
+      className={`w-full resize-none bg-transparent outline-none overflow-hidden ${className ?? ''}`}
+    />
+  )
+}
+
+function CardGap({ index, onInsert }: { index: number; onInsert: (rect: PopoverRect) => void }) {
+  const [hovered, setHovered] = useState(false)
+  void index
+  function clickPlus(e: React.MouseEvent<HTMLElement>) {
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    onInsert({ left: r.left + r.width / 2 - 230, top: r.bottom + 8, width: 460 })
+  }
+  return (
+    <div
+      className="relative h-3 -my-0.5 select-none"
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      <div className={`absolute left-0 right-0 top-1/2 -translate-y-1/2 h-px bg-[#cbd5e1] transition-opacity ${hovered ? 'opacity-100' : 'opacity-0'}`} />
+      <button
+        type="button"
+        data-v11-popover-trigger
+        onClick={clickPlus}
+        aria-label="Insert card here"
+        className={`absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 size-6 rounded-full bg-[#0787FF] inline-flex items-center justify-center shadow-[0_8px_18px_-6px_rgba(7,135,255,0.5),inset_0_1px_0_rgba(255,255,255,0.3)] transition-[opacity,transform] ${hovered ? 'opacity-100 scale-100' : 'opacity-0 scale-90 pointer-events-none'}`}
+      >
+        <Plus size={13} strokeWidth={2.75} className="text-white" />
+      </button>
     </div>
   )
 }
@@ -1069,56 +1274,190 @@ function ImagePicker({
 }
 
 function BlockPicker({
-  onPick, onClose,
+  rect, onPick, onClose,
 }: {
+  rect: PopoverRect
   onPick: (kind: CardKind) => void
   onClose: () => void
 }) {
-  const blocks: { kind: CardKind; Icon: typeof Heading1; label: string; detail: string }[] = [
-    { kind: 'heading',    Icon: Heading1, label: 'Heading',    detail: 'Big section title' },
-    { kind: 'subheading', Icon: Heading2, label: 'Sub-heading', detail: 'Smaller section break' },
-    { kind: 'paragraph',  Icon: List,     label: 'Paragraph',  detail: 'Body copy with autosave' },
-    { kind: 'image',      Icon: ImageIcon, label: 'Image',     detail: 'Inline visual with caption' },
-    { kind: 'quote',      Icon: Quote,    label: 'Pull quote', detail: 'Emphasise a key line' },
-    { kind: 'attachment', Icon: Link2,    label: 'Attachment', detail: 'Source link or document' },
+  const [q, setQ] = useState('')
+  const [tab, setTab] = useState<'all' | 'insert' | 'template'>('all')
+  void onClose
+
+  type Tile = { kind: CardKind; Icon: typeof Heading1; label: string; section: 'suggested' | 'assets' | 'text' }
+  const tiles: Tile[] = [
+    // Suggested
+    { kind: 'paragraph',  Icon: FileText, label: 'Normal Text',    section: 'suggested' },
+    { kind: 'attachment', Icon: Link2,    label: 'File attachment', section: 'suggested' },
+    { kind: 'heading',    Icon: Heading1, label: 'Heading 1',      section: 'suggested' },
+    { kind: 'subheading', Icon: Heading2, label: 'Heading 3',      section: 'suggested' },
+    // Assets
+    { kind: 'image',      Icon: ImageIcon, label: 'Image',         section: 'assets' },
+    { kind: 'attachment', Icon: Link2,     label: 'File attachment', section: 'assets' },
+    // Text
+    { kind: 'paragraph',  Icon: FileText, label: 'Normal Text',    section: 'text' },
+    { kind: 'heading',    Icon: Heading1, label: 'Heading 1',      section: 'text' },
+    { kind: 'subheading', Icon: Heading2, label: 'Heading 2',      section: 'text' },
+    { kind: 'subheading', Icon: Heading2, label: 'Heading 3',      section: 'text' },
+    { kind: 'quote',      Icon: Quote,    label: 'Pull quote',     section: 'text' },
   ]
+
+  const visible = tiles.filter(t => {
+    if (tab === 'insert' && t.section === 'text') return false
+    if (tab === 'template') return false
+    if (!q) return true
+    return t.label.toLowerCase().includes(q.toLowerCase().trim())
+  })
+
+  const groups: { id: 'suggested' | 'assets' | 'text'; title: string }[] = [
+    { id: 'suggested', title: 'Suggested' },
+    { id: 'assets',    title: 'Assets' },
+    { id: 'text',      title: 'Text' },
+  ]
+
+  const left = Math.max(16, Math.min(rect.left, (typeof window !== 'undefined' ? window.innerWidth : 1280) - (rect.width ?? 460) - 16))
+
   return (
-    <Overlay onClose={onClose}>
-      <div className="w-[560px] bg-white border border-[#e6ecf4] rounded-[24px] shadow-[0px_32px_80px_-20px_rgba(31,57,99,0.30)] flex flex-col overflow-hidden">
-        <header className="px-6 pt-5 pb-4 flex items-center justify-between border-b border-[#eef2f7]">
-          <div>
-            <p className="text-[10.5px] font-bold uppercase tracking-[0.18em] text-[#94a3b8]">Insert</p>
-            <h2 className="text-[17px] font-bold tracking-tight text-[#0f172a]">Add a card</h2>
+    <div
+      data-v11-popover
+      className="fixed z-[70] v11-popover-in"
+      style={{ left, top: rect.top, width: rect.width ?? 460 }}
+    >
+      <div className="bg-white border border-[#e6ecf4] rounded-[20px] shadow-[0px_24px_60px_-12px_rgba(31,57,99,0.30),0px_2px_6px_-2px_rgba(31,57,99,0.10)] overflow-hidden">
+
+        {/* Search */}
+        <div className="px-3 pt-3 pb-2">
+          <div className="relative">
+            <Search size={13} strokeWidth={2.25} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#94a3b8]" />
+            <input
+              autoFocus
+              value={q}
+              onChange={e => setQ(e.target.value)}
+              placeholder="Search…"
+              className="w-full h-10 pl-9 pr-3 rounded-[12px] bg-[#f7faff] border border-[#eef2f7] focus:border-[#0787FF] focus:bg-white focus:ring-2 focus:ring-[#0787FF]/15 outline-none text-[13px] tracking-tight text-[#0f172a] placeholder:text-[#94a3b8] transition-[box-shadow,border-color,background-color]"
+            />
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="size-9 rounded-[12px] inline-flex items-center justify-center text-[#475569] hover:bg-[#f3f6fb] transition-colors"
-            aria-label="Close"
-          >
-            <X size={15} strokeWidth={2.25} />
-          </button>
-        </header>
-        <div className="p-4 grid grid-cols-2 gap-2.5">
-          {blocks.map(({ kind, Icon, label, detail }) => (
+        </div>
+
+        {/* Tabs */}
+        <div className="px-3 pb-2 flex items-center gap-1.5">
+          {(['all', 'insert', 'template'] as const).map(t => (
             <button
-              key={kind}
+              key={t}
               type="button"
-              onClick={() => onPick(kind)}
-              className="group flex items-start gap-3 p-4 rounded-[16px] border border-[#e6ecf4] hover:border-[#0787FF] hover:bg-[#eff6ff] transition-colors text-left"
+              onClick={() => setTab(t)}
+              className={`h-7 px-3 rounded-full text-[11.5px] font-semibold tracking-tight capitalize transition-colors ${
+                tab === t ? 'bg-[#0f172a] text-white' : 'bg-[#f3f6fb] text-[#475569] hover:bg-[#e6ecf4]'
+              }`}
             >
-              <span className="size-10 rounded-[12px] bg-[#DBEAFE] text-[#0787FF] inline-flex items-center justify-center shrink-0 group-hover:bg-[#0787FF] group-hover:text-white transition-colors">
-                <Icon size={16} strokeWidth={2.25} />
-              </span>
-              <div className="flex-1 min-w-0">
-                <p className="text-[13.5px] font-bold tracking-tight text-[#0f172a]">{label}</p>
-                <p className="text-[11.5px] text-[#64748b] mt-0.5 leading-[1.4]">{detail}</p>
-              </div>
+              {t}
             </button>
           ))}
         </div>
+
+        {/* Groups */}
+        <div className="max-h-[420px] overflow-y-auto px-3 pb-3">
+          {groups.map(g => {
+            const groupTiles = visible.filter(t => t.section === g.id)
+            if (groupTiles.length === 0) return null
+            return (
+              <section key={g.id} className="pt-2">
+                <p className="text-[10.5px] font-bold uppercase tracking-[0.18em] text-[#94a3b8] px-1 mb-1.5">{g.title}</p>
+                <div className="grid grid-cols-4 gap-2">
+                  {groupTiles.map((t, i) => (
+                    <button
+                      key={`${g.id}-${i}`}
+                      type="button"
+                      onClick={() => onPick(t.kind)}
+                      className="group flex flex-col items-center justify-center gap-2 py-3.5 rounded-[14px] border border-[#e6ecf4] hover:border-[#0787FF] hover:bg-[#eff6ff] active:scale-[0.98] transition-[border-color,background-color,transform]"
+                    >
+                      <span className="size-8 rounded-[10px] inline-flex items-center justify-center text-[#0787FF] group-hover:scale-105 transition-transform">
+                        <t.Icon size={18} strokeWidth={2.25} />
+                      </span>
+                      <span className="text-[11.5px] font-semibold text-[#0f172a] tracking-tight">{t.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            )
+          })}
+          {visible.length === 0 && (
+            <p className="text-center text-[12px] text-[#94a3b8] py-6">No matches.</p>
+          )}
+        </div>
       </div>
-    </Overlay>
+    </div>
+  )
+}
+
+function BerryAIPanel({ rect, onClose }: { rect: PopoverRect; onClose: () => void }) {
+  const [input, setInput] = useState('')
+  void onClose
+  const chips: { Icon: typeof Heading1; label: string }[] = [
+    { Icon: FileText, label: 'Fix grammar' },
+    { Icon: List,     label: 'Make longer' },
+    { Icon: List,     label: 'Make shorter' },
+    { Icon: Quote,    label: 'Translate' },
+  ]
+  const left = Math.max(16, Math.min(rect.left, (typeof window !== 'undefined' ? window.innerWidth : 1280) - 460 - 16))
+  return (
+    <div
+      data-v11-popover
+      className="fixed z-[70] v11-popover-in"
+      style={{ left, top: rect.top, width: 440 }}
+    >
+      <div className="rounded-[20px] overflow-hidden shadow-[0px_24px_60px_-12px_rgba(7,135,255,0.30),0px_2px_8px_-2px_rgba(31,57,99,0.12)]">
+        {/* Glassy gradient panel */}
+        <div
+          className="relative px-5 py-5 flex flex-col items-center text-center gap-2.5"
+          style={{
+            background: 'linear-gradient(180deg, #ffffff 0%, #eff6ff 60%, #e0f1ff 100%)',
+          }}
+        >
+          <span className="size-11 rounded-[14px] bg-white border border-[#dbeafe] inline-flex items-center justify-center shadow-[0_6px_14px_-6px_rgba(7,135,255,0.45)]">
+            <Sparkles size={18} strokeWidth={2.25} className="text-[#0787FF] v11-sparkle" />
+          </span>
+          <h3 className="text-[17px] font-bold tracking-tight text-[#0f172a]">How can I help your writing?</h3>
+          <p className="text-[12.5px] text-[#475569] tracking-tight -mt-0.5">
+            I can refine your writing, fix grammar, and more.
+          </p>
+
+          {/* Input */}
+          <div className="w-full mt-2 relative">
+            <input
+              autoFocus
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              placeholder="Ask Berry AI to write and edit"
+              className="w-full h-11 pl-3.5 pr-11 rounded-[12px] bg-white border border-[#dbeafe] outline-none text-[13.5px] text-[#0f172a] placeholder:text-[#94a3b8] tracking-tight shadow-[inset_0_1px_0_rgba(255,255,255,0.8)] focus:border-[#0787FF] focus:ring-2 focus:ring-[#0787FF]/15 transition-[box-shadow,border-color]"
+            />
+            <button
+              type="button"
+              aria-label="Send"
+              className="absolute right-1.5 top-1.5 size-8 rounded-[10px] bg-[#0787FF] inline-flex items-center justify-center text-white shadow-[0_6px_14px_-6px_rgba(7,135,255,0.5)] hover:brightness-105 active:scale-95 transition-[filter,transform]"
+            >
+              <Send size={13} strokeWidth={2.25} />
+            </button>
+          </div>
+        </div>
+
+        {/* Suggested */}
+        <div className="bg-white px-5 py-4 flex flex-col gap-2 border-t border-[#eef2f7]">
+          <p className="text-[10.5px] font-bold uppercase tracking-[0.18em] text-[#94a3b8]">Suggested</p>
+          <div className="flex flex-wrap gap-1.5">
+            {chips.map(({ Icon, label }) => (
+              <button
+                key={label}
+                type="button"
+                className="inline-flex items-center gap-1.5 h-9 px-3 rounded-[12px] bg-white border border-[#e6ecf4] hover:border-[#0787FF] hover:bg-[#eff6ff] hover:text-[#0787FF] text-[12.5px] font-semibold text-[#475569] tracking-tight transition-colors"
+              >
+                <Icon size={13} strokeWidth={2.25} /> {label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -1222,6 +1561,18 @@ function V11Styles() {
         to   { opacity: 1; transform: translateX(0); }
       }
       .v11-side-fade { animation: v11-side-fade 220ms cubic-bezier(0.22,1,0.36,1) 80ms both; }
+
+      @keyframes v11-popover-in {
+        from { opacity: 0; transform: translateY(-4px) scale(0.98); }
+        to   { opacity: 1; transform: translateY(0) scale(1); }
+      }
+      .v11-popover-in { animation: v11-popover-in 160ms cubic-bezier(0.22,1,0.36,1) both; transform-origin: top center; }
+
+      @keyframes v11-tool-in {
+        from { opacity: 0; transform: translateY(-2px); }
+        to   { opacity: 1; transform: translateY(0); }
+      }
+      .v11-tool-in { animation: v11-tool-in 140ms ease-out both; }
 
       @keyframes v11-overlay-in {
         from { opacity: 0; }
