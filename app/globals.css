@@ -84,7 +84,33 @@
      These aliases make font-sans and font-display work as Tailwind classes. */
   --font-sans:    var(--font-inter, 'Inter', sans-serif);
   --font-display: var(--font-dm-sans, 'DM Sans', sans-serif);
+  --font-mukta:   var(--font-mukta, 'Mukta', sans-serif);
 
+  /* ── shadcn/ui bridge ────────────────────────────────────────────────────
+     Map shadcn semantic tokens to Snowberry Brand palette.
+     Any shadcn component (Button, Input, Card, Tabs, Switch…) inherits
+     these automatically — no per-component patching needed.
+     ────────────────────────────────────────────────────────────────────── */
+  --color-background:            #FFFFFF;
+  --color-foreground:            #0A0A0A;
+  --color-card:                  #FFFFFF;
+  --color-card-foreground:       #0A0A0A;
+  --color-popover:               #FFFFFF;
+  --color-popover-foreground:    #0A0A0A;
+  --color-primary:               #0787FF;
+  --color-primary-foreground:    #FFFFFF;
+  --color-secondary:             #F5F5F5;
+  --color-secondary-foreground:  #171717;
+  --color-muted:                 #F5F5F5;
+  --color-muted-foreground:      #737373;
+  --color-accent:                #EBF6FF;
+  --color-accent-foreground:     #062365;
+  --color-destructive:           #EF4444;
+  --color-destructive-foreground: #FFFFFF;
+  --color-border:                #E5E5E5;
+  --color-input:                 #E5E5E5;
+  --color-ring:                  #76CDFF;
+  --radius: 12px;
 }
 
 /* ─── Layout Constants ───────────────────────────────────────────────────────

@@ -18,6 +18,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import MediaPickerModal from '@/components/media/MediaPickerModal'
 import {
   ArrowLeft, ArrowRight, Check, ChevronDown, ChevronRight, Search,
   Plus, FileText, Image as ImageIcon, Quote, Type, Heading1, Heading2,
@@ -110,6 +111,7 @@ export default function NewsCreationV11() {
   const [detailsOpen, setDetailsOpen] = useState(false)
   const [imagePickerFor, setImagePickerFor] = useState<string | null>(null)
   const [inlinePopover, setInlinePopover] = useState<InlinePopover>(null)
+  const [aiPreview, setAiPreview] = useState<{ cardId: string; next: string } | null>(null)
   const [categoryPickerOpen, setCategoryPickerOpen] = useState(false)
   const [resolvedChecks, setResolvedChecks] = useState<Set<string>>(new Set())
 
@@ -304,6 +306,7 @@ export default function NewsCreationV11() {
                     onMoveDown={() => moveCard(card.id, 1)}
                     onOpenAI={(rect) => setInlinePopover({ kind: 'ai', cardId: card.id, rect })}
                     aiOpenFor={inlinePopover && inlinePopover.kind === 'ai' ? inlinePopover.cardId : null}
+                    previewValue={aiPreview?.cardId === card.id ? aiPreview.next : undefined}
                   />
                   <CardGap
                     index={i + 1}
@@ -375,16 +378,15 @@ export default function NewsCreationV11() {
         />
       )}
 
-      {/* Image picker */}
-      {imagePickerFor && (
-        <ImagePicker
-          onPick={(img) => {
-            updateCard(imagePickerFor, { value: img.id, alt: img.title })
-            setImagePickerFor(null)
-          }}
-          onClose={() => setImagePickerFor(null)}
-        />
-      )}
+      {/* Image picker — Finder-style media library modal */}
+      <MediaPickerModal
+        open={imagePickerFor !== null}
+        onSelect={(img) => {
+          if (imagePickerFor) updateCard(imagePickerFor, { value: img.src, alt: img.title })
+          setImagePickerFor(null)
+        }}
+        onClose={() => setImagePickerFor(null)}
+      />
 
       {/* Inline popovers (block picker + Berry AI) */}
       {inlinePopover && inlinePopover.kind === 'block' && (
@@ -394,12 +396,27 @@ export default function NewsCreationV11() {
           onClose={() => setInlinePopover(null)}
         />
       )}
-      {inlinePopover && inlinePopover.kind === 'ai' && (
-        <BerryAIPanel
-          rect={inlinePopover.rect}
-          onClose={() => setInlinePopover(null)}
-        />
-      )}
+      {inlinePopover && inlinePopover.kind === 'ai' && (() => {
+        const target = cards.find(c => c.id === inlinePopover.cardId)
+        if (!target) return null
+        return (
+          <BerryAIPanel
+            rect={inlinePopover.rect}
+            source={target.value}
+            onPreview={(next) => setAiPreview({ cardId: target.id, next })}
+            onClearPreview={() => setAiPreview(null)}
+            onApply={(next) => {
+              updateCard(target.id, { value: next })
+              setAiPreview(null)
+              setInlinePopover(null)
+            }}
+            onClose={() => {
+              setAiPreview(null)
+              setInlinePopover(null)
+            }}
+          />
+        )
+      })()}
 
       {/* Category picker */}
       {categoryPickerOpen && (
@@ -490,7 +507,7 @@ function SideItem({
 
 function CardRow({
   card, focused, isFirst, isLast, onFocus, onBlur, onChange, onRemove,
-  onPickImage, onMoveUp, onMoveDown, onOpenAI, aiOpenFor,
+  onPickImage, onMoveUp, onMoveDown, onOpenAI, aiOpenFor, previewValue,
 }: {
   card: Card
   focused: boolean
@@ -505,17 +522,24 @@ function CardRow({
   onMoveDown: () => void
   onOpenAI: (rect: PopoverRect) => void
   aiOpenFor: string | null
+  previewValue?: string
 }) {
   const Glyph = kindGlyph(card.kind)
   const active = focused || aiOpenFor === card.id
+  const isPreviewing = previewValue !== undefined
 
   function triggerAI(e: React.MouseEvent<HTMLElement>) {
-    const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
-    onOpenAI({ left: r.right - 380, top: r.bottom + 8 })
+    // Align the AI panel with the card row (not the button) so it feels
+    // attached to the card being edited, matching the Figma layout.
+    const row = (e.currentTarget as HTMLElement).closest('[data-v11-card-row]') as HTMLElement | null
+    const btn = e.currentTarget as HTMLElement
+    const r = (row ?? btn).getBoundingClientRect()
+    onOpenAI({ left: r.left, top: r.bottom + 8, width: r.width })
   }
 
   return (
     <div
+      data-v11-card-row
       className={`group relative flex gap-3 px-3 py-3 -mx-3 rounded-[16px] transition-colors ${
         active ? 'bg-[#f1f5f9]' : 'hover:bg-[#f7faff]/70'
       }`}
@@ -533,24 +557,40 @@ function CardRow({
       {/* Body */}
       <div className="flex-1 min-w-0">
         {card.kind === 'heading' && (
-          <AutoTextarea
-            value={card.value}
-            placeholder="Title"
-            onFocus={onFocus}
-            onBlur={onBlur}
-            onChange={onChange}
-            className="text-[32px] leading-[1.15] font-bold tracking-[-0.025em] text-[#0f172a] placeholder:text-[#cbd5e1]"
-          />
+          isPreviewing ? (
+            <DiffText
+              original={card.value}
+              next={previewValue!}
+              className="text-[32px] leading-[1.15] font-bold tracking-[-0.025em] text-[#0f172a]"
+            />
+          ) : (
+            <AutoTextarea
+              value={card.value}
+              placeholder="Title"
+              onFocus={onFocus}
+              onBlur={onBlur}
+              onChange={onChange}
+              className="text-[32px] leading-[1.15] font-bold tracking-[-0.025em] text-[#0f172a] placeholder:text-[#cbd5e1]"
+            />
+          )
         )}
         {card.kind === 'subheading' && (
-          <AutoTextarea
-            value={card.value}
-            placeholder="Sub-Title"
-            onFocus={onFocus}
-            onBlur={onBlur}
-            onChange={onChange}
-            className="text-[18px] leading-[1.4] font-semibold tracking-tight text-[#334155] placeholder:text-[#cbd5e1]"
-          />
+          isPreviewing ? (
+            <DiffText
+              original={card.value}
+              next={previewValue!}
+              className="text-[18px] leading-[1.4] font-semibold tracking-tight text-[#334155]"
+            />
+          ) : (
+            <AutoTextarea
+              value={card.value}
+              placeholder="Sub-Title"
+              onFocus={onFocus}
+              onBlur={onBlur}
+              onChange={onChange}
+              className="text-[18px] leading-[1.4] font-semibold tracking-tight text-[#334155] placeholder:text-[#cbd5e1]"
+            />
+          )
         )}
         {card.kind === 'image' && (
           <ImageCard
@@ -561,24 +601,40 @@ function CardRow({
           />
         )}
         {card.kind === 'paragraph' && (
-          <AutoTextarea
-            value={card.value}
-            placeholder="Description here.."
-            onFocus={onFocus}
-            onBlur={onBlur}
-            onChange={onChange}
-            className="text-[16px] leading-[1.7] text-[#1e293b] placeholder:text-[#cbd5e1]"
-          />
+          isPreviewing ? (
+            <DiffText
+              original={card.value}
+              next={previewValue!}
+              className="text-[16px] leading-[1.7] text-[#1e293b]"
+            />
+          ) : (
+            <AutoTextarea
+              value={card.value}
+              placeholder="Description here.."
+              onFocus={onFocus}
+              onBlur={onBlur}
+              onChange={onChange}
+              className="text-[16px] leading-[1.7] text-[#1e293b] placeholder:text-[#cbd5e1]"
+            />
+          )
         )}
         {card.kind === 'quote' && (
-          <AutoTextarea
-            value={card.value}
-            placeholder="Pull quote…"
-            onFocus={onFocus}
-            onBlur={onBlur}
-            onChange={onChange}
-            className="text-[17px] leading-[1.5] font-medium italic text-[#0f172a] placeholder:text-[#cbd5e1] border-l-[3px] border-[#C4B5FD] pl-4"
-          />
+          isPreviewing ? (
+            <DiffText
+              original={card.value}
+              next={previewValue!}
+              className="text-[17px] leading-[1.5] font-medium italic text-[#0f172a] border-l-[3px] border-[#C4B5FD] pl-4"
+            />
+          ) : (
+            <AutoTextarea
+              value={card.value}
+              placeholder="Pull quote…"
+              onFocus={onFocus}
+              onBlur={onBlur}
+              onChange={onChange}
+              className="text-[17px] leading-[1.5] font-medium italic text-[#0f172a] placeholder:text-[#cbd5e1] border-l-[3px] border-[#C4B5FD] pl-4"
+            />
+          )
         )}
         {card.kind === 'attachment' && (
           <div className="flex items-center gap-3 px-3 py-2.5 rounded-[12px] border border-[#e6ecf4] bg-white">
@@ -738,10 +794,18 @@ function ImageCard({ value, alt, onPick, onClear }: { value: string; alt?: strin
   }
   const lib = IMAGE_LIBRARY.find(i => i.id === value)
   const tone = lib?.tone ?? 'from-[#bae6fd] to-[#c7d2fe]'
+  const isUrl = /^(https?:|blob:)/.test(value)
   return (
     <div className="relative w-full h-[260px] rounded-[16px] overflow-hidden border border-[#e6ecf4]">
-      <div className={`absolute inset-0 bg-gradient-to-br ${tone}`} />
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(255,255,255,0.4),transparent_55%)]" />
+      {isUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={value} alt={alt ?? ''} className="absolute inset-0 size-full object-cover" />
+      ) : (
+        <>
+          <div className={`absolute inset-0 bg-gradient-to-br ${tone}`} />
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(255,255,255,0.4),transparent_55%)]" />
+        </>
+      )}
       <div className="absolute left-3 bottom-3 flex items-center gap-2">
         <span className="px-2 py-1 rounded-md bg-black/30 backdrop-blur text-white text-[11px] font-semibold tracking-tight">
           {alt ?? 'Cover'}
@@ -921,8 +985,15 @@ function ReadCard({ card }: { card: Card }) {
     const tone = lib?.tone ?? 'from-[#bae6fd] to-[#c7d2fe]'
     return (
       <div className="relative w-full h-[220px] rounded-[16px] overflow-hidden border border-[#e6ecf4]">
-        <div className={`absolute inset-0 bg-gradient-to-br ${tone}`} />
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(255,255,255,0.4),transparent_55%)]" />
+        {/^(https?:|blob:)/.test(card.value) ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={card.value} alt={card.alt ?? ''} className="absolute inset-0 size-full object-cover" />
+        ) : (
+          <>
+            <div className={`absolute inset-0 bg-gradient-to-br ${tone}`} />
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(255,255,255,0.4),transparent_55%)]" />
+          </>
+        )}
       </div>
     )
   }
@@ -1182,97 +1253,6 @@ function Field({ label, required, children }: { label: string; required?: boolea
   )
 }
 
-function ImagePicker({
-  onPick, onClose,
-}: {
-  onPick: (img: { id: string; title: string }) => void
-  onClose: () => void
-}) {
-  const [q, setQ] = useState('')
-  const filtered = IMAGE_LIBRARY.filter(i => i.title.toLowerCase().includes(q.toLowerCase().trim()))
-  return (
-    <Overlay onClose={onClose}>
-      <div className="w-[720px] max-h-[80vh] bg-white border border-[#e6ecf4] rounded-[24px] shadow-[0px_32px_80px_-20px_rgba(31,57,99,0.30)] flex flex-col overflow-hidden">
-        <header className="px-6 pt-5 pb-4 flex flex-col gap-3 border-b border-[#eef2f7]">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-[10.5px] font-bold uppercase tracking-[0.18em] text-[#94a3b8]">Insert</p>
-              <h2 className="text-[17px] font-bold tracking-tight text-[#0f172a]">Add an image</h2>
-            </div>
-            <button
-              type="button"
-              onClick={onClose}
-              className="size-9 rounded-[12px] inline-flex items-center justify-center text-[#475569] hover:bg-[#f3f6fb] transition-colors"
-              aria-label="Close"
-            >
-              <X size={15} strokeWidth={2.25} />
-            </button>
-          </div>
-          <div className="relative">
-            <Search size={14} strokeWidth={2.25} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#94a3b8]" />
-            <input
-              autoFocus
-              value={q}
-              onChange={e => setQ(e.target.value)}
-              placeholder="Search media library…"
-              className="w-full h-11 pl-10 pr-3 rounded-[12px] bg-[#f7faff] border border-[#eef2f7] focus:border-[#0787FF] focus:bg-white focus:ring-2 focus:ring-[#0787FF]/15 outline-none text-[13.5px] tracking-tight text-[#0f172a] placeholder:text-[#94a3b8] transition-[box-shadow,border-color,background-color]"
-            />
-          </div>
-        </header>
-
-        <div className="px-6 pt-3 flex items-center gap-1.5">
-          {['All media', 'Uploads', 'Stock', 'AI generated'].map((t, i) => (
-            <button
-              key={t}
-              className={`h-8 px-3 rounded-full text-[12px] font-semibold tracking-tight transition-colors ${
-                i === 0 ? 'bg-[#0f172a] text-white' : 'bg-[#f3f6fb] text-[#475569] hover:bg-[#e6ecf4]'
-              }`}
-            >
-              {t}
-            </button>
-          ))}
-        </div>
-
-        <div className="flex-1 overflow-y-auto px-6 py-5">
-          <div className="grid grid-cols-3 gap-3">
-            {filtered.map(img => (
-              <button
-                key={img.id}
-                type="button"
-                onClick={() => onPick(img)}
-                className="group relative aspect-[4/3] rounded-[14px] overflow-hidden border border-[#e6ecf4] hover:border-[#0787FF] hover:shadow-[0_8px_20px_-6px_rgba(31,57,99,0.18)] transition-[border-color,box-shadow]"
-              >
-                <div className={`absolute inset-0 bg-gradient-to-br ${img.tone}`} />
-                <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(255,255,255,0.4),transparent_55%)]" />
-                <div className="absolute inset-x-0 bottom-0 px-3 py-2 bg-gradient-to-t from-black/55 to-transparent text-left">
-                  <p className="text-[12px] font-semibold text-white tracking-tight truncate">{img.title}</p>
-                  <p className="text-[10.5px] text-white/85 truncate">{img.tag}</p>
-                </div>
-                <span className="absolute right-2 top-2 size-7 rounded-full bg-white/95 text-[#0f172a] inline-flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                  <Check size={13} strokeWidth={2.5} />
-                </span>
-              </button>
-            ))}
-          </div>
-          {filtered.length === 0 && (
-            <p className="text-center text-[13px] text-[#94a3b8] py-12">No matches.</p>
-          )}
-        </div>
-
-        <footer className="px-6 py-4 border-t border-[#eef2f7] flex items-center justify-between">
-          <button
-            type="button"
-            className="h-10 px-4 rounded-[12px] bg-white border border-[#e6ecf4] text-[#0f172a] text-[13px] font-semibold tracking-tight inline-flex items-center gap-2 hover:bg-[#f7faff] transition-colors"
-          >
-            <Plus size={13} strokeWidth={2.5} /> Upload new
-          </button>
-          <p className="text-[12px] text-[#94a3b8]">Click an image to insert it.</p>
-        </footer>
-      </div>
-    </Overlay>
-  )
-}
-
 function BlockPicker({
   rect, onPick, onClose,
 }: {
@@ -1390,75 +1370,367 @@ function BlockPicker({
   )
 }
 
-function BerryAIPanel({ rect, onClose }: { rect: PopoverRect; onClose: () => void }) {
-  const [input, setInput] = useState('')
-  void onClose
-  const chips: { Icon: typeof Heading1; label: string }[] = [
-    { Icon: FileText, label: 'Fix grammar' },
-    { Icon: List,     label: 'Make longer' },
-    { Icon: List,     label: 'Make shorter' },
-    { Icon: Quote,    label: 'Translate' },
-  ]
-  const left = Math.max(16, Math.min(rect.left, (typeof window !== 'undefined' ? window.innerWidth : 1280) - 460 - 16))
+type BerryStage = 'prompt' | 'loading' | 'result'
+
+type DiffPart = { type: 'eq' | 'add' | 'del'; text: string }
+
+function wordDiff(a: string, b: string): DiffPart[] {
+  const A = a.length ? a.split(/(\s+)/).filter(Boolean) : []
+  const B = b.length ? b.split(/(\s+)/).filter(Boolean) : []
+  const n = A.length, m = B.length
+  const dp: number[][] = Array.from({ length: n + 1 }, () => Array(m + 1).fill(0))
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      dp[i][j] = A[i] === B[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1])
+    }
+  }
+  const out: DiffPart[] = []
+  let i = 0, j = 0
+  while (i < n && j < m) {
+    if (A[i] === B[j]) { out.push({ type: 'eq', text: A[i] }); i++; j++ }
+    else if (dp[i + 1][j] >= dp[i][j + 1]) { out.push({ type: 'del', text: A[i] }); i++ }
+    else { out.push({ type: 'add', text: B[j] }); j++ }
+  }
+  while (i < n) out.push({ type: 'del', text: A[i++] })
+  while (j < m) out.push({ type: 'add', text: B[j++] })
+  return out
+}
+
+function DiffText({ original, next, className }: { original: string; next: string; className?: string }) {
+  const parts = useMemo(() => wordDiff(original, next), [original, next])
   return (
-    <div
-      data-v11-popover
-      className="fixed z-[70] v11-popover-in"
-      style={{ left, top: rect.top, width: 440 }}
-    >
-      <div className="rounded-[20px] overflow-hidden shadow-[0px_24px_60px_-12px_rgba(7,135,255,0.30),0px_2px_8px_-2px_rgba(31,57,99,0.12)]">
-        {/* Glassy gradient panel */}
-        <div
-          className="relative px-5 py-5 flex flex-col items-center text-center gap-2.5"
-          style={{
-            background: 'linear-gradient(180deg, #ffffff 0%, #eff6ff 60%, #e0f1ff 100%)',
-          }}
-        >
-          <span className="size-11 rounded-[14px] bg-white border border-[#dbeafe] inline-flex items-center justify-center shadow-[0_6px_14px_-6px_rgba(7,135,255,0.45)]">
-            <Sparkles size={18} strokeWidth={2.25} className="text-[#0787FF] v11-sparkle" />
-          </span>
-          <h3 className="text-[17px] font-bold tracking-tight text-[#0f172a]">How can I help your writing?</h3>
-          <p className="text-[12.5px] text-[#475569] tracking-tight -mt-0.5">
-            I can refine your writing, fix grammar, and more.
-          </p>
-
-          {/* Input */}
-          <div className="w-full mt-2 relative">
-            <input
-              autoFocus
-              value={input}
-              onChange={e => setInput(e.target.value)}
-              placeholder="Ask Berry AI to write and edit"
-              className="w-full h-11 pl-3.5 pr-11 rounded-[12px] bg-white border border-[#dbeafe] outline-none text-[13.5px] text-[#0f172a] placeholder:text-[#94a3b8] tracking-tight shadow-[inset_0_1px_0_rgba(255,255,255,0.8)] focus:border-[#0787FF] focus:ring-2 focus:ring-[#0787FF]/15 transition-[box-shadow,border-color]"
-            />
-            <button
-              type="button"
-              aria-label="Send"
-              className="absolute right-1.5 top-1.5 size-8 rounded-[10px] bg-[#0787FF] inline-flex items-center justify-center text-white shadow-[0_6px_14px_-6px_rgba(7,135,255,0.5)] hover:brightness-105 active:scale-95 transition-[filter,transform]"
+    <div className={`${className ?? ''} whitespace-pre-wrap v11-diff-in`}>
+      {parts.map((p, i) => {
+        if (p.type === 'eq') return <span key={i}>{p.text}</span>
+        if (p.type === 'add') {
+          return (
+            <span
+              key={i}
+              className="rounded-[3px] px-[1px] bg-[#dcfce7] text-[#065f46] shadow-[inset_0_-1px_0_rgba(16,185,129,0.35)]"
             >
-              <Send size={13} strokeWidth={2.25} />
-            </button>
-          </div>
-        </div>
+              {p.text}
+            </span>
+          )
+        }
+        return (
+          <span
+            key={i}
+            className="rounded-[3px] px-[1px] line-through decoration-[1.5px] bg-[#fee2e2] text-[#991b1b]/80 decoration-[#dc2626]/60"
+          >
+            {p.text}
+          </span>
+        )
+      })}
+    </div>
+  )
+}
 
-        {/* Suggested */}
-        <div className="bg-white px-5 py-4 flex flex-col gap-2 border-t border-[#eef2f7]">
-          <p className="text-[10.5px] font-bold uppercase tracking-[0.18em] text-[#94a3b8]">Suggested</p>
-          <div className="flex flex-wrap gap-1.5">
-            {chips.map(({ Icon, label }) => (
-              <button
-                key={label}
-                type="button"
-                className="inline-flex items-center gap-1.5 h-9 px-3 rounded-[12px] bg-white border border-[#e6ecf4] hover:border-[#0787FF] hover:bg-[#eff6ff] hover:text-[#0787FF] text-[12.5px] font-semibold text-[#475569] tracking-tight transition-colors"
+function BerryAIPanel({
+  rect, source, onPreview, onClearPreview, onApply, onClose,
+}: {
+  rect: PopoverRect
+  source: string
+  onPreview: (next: string) => void
+  onClearPreview: () => void
+  onApply: (next: string) => void
+  onClose: () => void
+}) {
+  const [input, setInput] = useState('')
+  const [stage, setStage] = useState<BerryStage>('prompt')
+  const [result, setResult] = useState('')
+  const inputRef = useRef<HTMLTextAreaElement | null>(null)
+
+  const width = Math.max(560, Math.min(rect.width ?? 720, 900))
+  const left = Math.max(16, Math.min(
+    rect.left,
+    (typeof window !== 'undefined' ? window.innerWidth : 1280) - width - 16
+  ))
+
+  const chips = ['Fix grammar', 'Make Formal', 'Make Shorter', 'Translate']
+  const followUps = ['Make it shorter', 'More formal', 'Add a source', 'Punchier lede']
+
+  const canSend = input.trim().length > 0 && stage === 'prompt'
+
+  function extractBody(raw: string): string {
+    const idx = raw.indexOf('\n\n')
+    return idx > 0 ? raw.slice(idx + 2) : raw
+  }
+
+  function send(promptText?: string, iterateOnLast = false) {
+    const p = (promptText ?? input).trim()
+    if (!p) return
+    if (promptText) setInput(promptText)
+    // Follow-up chips iterate on Berry's last answer; a fresh Send starts from
+    // the original card so the diff on the card stays anchored to the source.
+    const base = iterateOnLast && result ? extractBody(result) : source
+    setStage('loading')
+    window.setTimeout(() => {
+      const raw = fakeAI(p, base)
+      setResult(raw)
+      onPreview(extractBody(raw))
+      setStage('result')
+    }, 1200)
+  }
+
+  function regenerate() {
+    setStage('loading')
+    window.setTimeout(() => {
+      const raw = fakeAI(input.trim(), source, /* variant */ true)
+      setResult(raw)
+      onPreview(extractBody(raw))
+      setStage('result')
+    }, 900)
+  }
+
+  function keyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      send()
+    }
+  }
+
+  return (
+    <>
+      {/* Backdrop — matches the Figma blur wash */}
+      <div
+        aria-hidden
+        data-v11-popover
+        className="fixed inset-0 z-[65] bg-white/20 backdrop-blur-[4px] v11-overlay-in"
+        onClick={onClose}
+      />
+
+      <div
+        data-v11-popover
+        className="fixed z-[70] v11-popover-in"
+        style={{ left, top: rect.top, width }}
+      >
+        {/* Outer panel — white card, soft double shadow, hairline outline */}
+        <div className="relative rounded-[10px] bg-white p-1 shadow-[0px_8px_24px_-6px_rgba(0,0,0,0.16),0px_0px_1px_0px_rgba(0,0,0,0.18)]">
+          {/* Header — subtle glassy gradient (blue/cyan bloom under a heavy blur) */}
+          <div className="relative overflow-hidden rounded-t-[8px]">
+            <div aria-hidden className="absolute -left-32 -top-10 h-[220px] w-[520px] rounded-full opacity-45"
+              style={{ background: 'radial-gradient(closest-side, #0787ff 0%, rgba(7,135,255,0) 70%)' }} />
+            <div aria-hidden className="absolute -right-24 -top-8 h-[240px] w-[420px] rounded-full opacity-45"
+              style={{ background: 'radial-gradient(closest-side, rgba(0,205,255,0.9) 0%, rgba(73,219,255,0) 70%)' }} />
+            <div aria-hidden className="absolute inset-0 backdrop-blur-[50px] bg-white/40" />
+
+            <div className="relative flex items-center gap-3 px-4 py-2.5">
+              <span
+                className="size-[26px] rounded-[6px] border border-white inline-flex items-center justify-center shadow-[0px_0px_8px_0px_rgba(17,24,39,0.08)]"
+                style={{ backgroundImage: 'linear-gradient(154deg, rgba(255,255,255,0.15) 8%, rgba(255,255,255,0.7) 88%)' }}
               >
-                <Icon size={13} strokeWidth={2.25} /> {label}
-              </button>
-            ))}
+                <Sparkles size={13} strokeWidth={2.25} className="text-[#0787FF]" />
+              </span>
+              <h3 className="flex-1 text-[16px] font-semibold tracking-tight text-[#020617] leading-[1.25]">
+                Berry Writing Tools
+              </h3>
+              <span className="inline-flex items-center gap-1 px-1 py-0.5 text-[12px] font-medium tracking-[-0.12px] text-[#171717]">
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
+                  <path d="M6 1v2m0 6v2M1 6h2m6 0h2M2.5 2.5l1.4 1.4m4.2 4.2l1.4 1.4M2.5 9.5l1.4-1.4m4.2-4.2L9.5 2.5" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" />
+                  <circle cx="6" cy="6" r="1.6" fill="currentColor" />
+                </svg>
+                Pandulipi
+              </span>
+            </div>
+          </div>
+
+          {/* Body block */}
+          <div className="rounded-[8px] border border-[#e8eef4] bg-white overflow-hidden">
+            {stage === 'prompt' && (
+              <div className="p-2">
+                <textarea
+                  ref={inputRef}
+                  autoFocus
+                  value={input}
+                  onChange={e => setInput(e.target.value)}
+                  onKeyDown={keyDown}
+                  placeholder="Revise this content to incorporate a more politically charged tone."
+                  rows={5}
+                  className="w-full resize-none outline-none px-1.5 py-2 text-[16px] leading-[1.5] text-[#020617] placeholder:text-[#020617]/30 tracking-tight bg-transparent"
+                />
+              </div>
+            )}
+
+            {stage === 'loading' && (
+              <div className="px-3.5 py-4 flex items-center gap-2 min-h-[132px]">
+                <span className="v11-berry-dot" />
+                <span className="v11-berry-dot" style={{ animationDelay: '150ms' }} />
+                <span className="v11-berry-dot" style={{ animationDelay: '300ms' }} />
+                <p className="text-[13.5px] tracking-tight text-[#64748b] font-medium ml-1.5">
+                  Berry is rewriting…
+                </p>
+              </div>
+            )}
+
+            {stage === 'result' && (
+              <div className="p-3 flex flex-col gap-3">
+                <div className="flex items-start gap-2.5">
+                  <span
+                    className="shrink-0 size-[26px] rounded-[8px] border border-white inline-flex items-center justify-center shadow-[0px_0px_8px_0px_rgba(17,24,39,0.08)]"
+                    style={{ backgroundImage: 'linear-gradient(154deg, #dbeafe 0%, #ffffff 100%)' }}
+                  >
+                    <Sparkles size={13} strokeWidth={2.25} className="text-[#0787FF] v11-sparkle" />
+                  </span>
+                  <div className="flex-1 min-w-0 flex flex-col gap-1.5">
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-[12.5px] font-semibold tracking-tight text-[#0f172a]">Berry</span>
+                      <span className="text-[11.5px] font-medium text-[#94a3b8] tracking-tight">
+                        {(() => {
+                          const idx = result.indexOf('\n\n')
+                          const preface = idx > 0 ? result.slice(0, idx) : ''
+                          return preface.replace(/[:.]$/, '') || 'suggests this rewrite'
+                        })()}
+                      </span>
+                    </div>
+                    {/* Clean, readable answer — the diff on the card shows what changed */}
+                    <div
+                      className="rounded-[12px] rounded-tl-[4px] px-3.5 py-2.5 text-[14px] leading-[1.55] text-[#020617] tracking-tight whitespace-pre-wrap"
+                      style={{
+                        background: 'linear-gradient(180deg, #f4faff 0%, #ffffff 100%)',
+                        boxShadow: 'inset 0 0 0 1px #dbeafe',
+                      }}
+                    >
+                      {extractBody(result)}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Follow-up chips — iterate on Berry's last answer */}
+                <div className="flex flex-wrap items-center gap-1.5 pl-[36px]">
+                  {followUps.map((label) => (
+                    <button
+                      key={label}
+                      type="button"
+                      onClick={() => send(label + ' this text.', /* iterateOnLast */ true)}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-white border border-[#e2e8f0] text-[11.5px] font-medium text-[#475569] leading-4 tracking-tight hover:border-[#0787FF] hover:text-[#0787FF] hover:bg-[#eff6ff] transition-colors"
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Footer actions row */}
+            <div className="border-t border-black/[0.05] p-3.5 flex items-center gap-3">
+              {stage === 'result' ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => { onClearPreview(); setStage('prompt') }}
+                    className="inline-flex items-center h-8 px-3 rounded-full bg-black/[0.03] hover:bg-black/[0.06] text-[12px] font-medium text-[#171717] leading-5 tracking-tight transition-colors"
+                  >
+                    Edit prompt
+                  </button>
+                  <button
+                    type="button"
+                    onClick={regenerate}
+                    className="inline-flex items-center gap-1.5 h-8 px-3 rounded-full bg-black/[0.03] hover:bg-black/[0.06] text-[12px] font-medium text-[#171717] leading-5 tracking-tight transition-colors"
+                  >
+                    Try again
+                  </button>
+                  <div className="flex-1" />
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="inline-flex items-center h-8 px-3 rounded-[8px] text-[13px] font-medium text-[#475569] hover:bg-[#f3f6fb] tracking-tight transition-colors"
+                  >
+                    Discard
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onApply(extractBody(result))}
+                    className="inline-flex items-center gap-1.5 min-h-[32px] px-3 rounded-[8px] bg-[#0787FF] text-white text-[14px] font-medium leading-5 tracking-tight shadow-[inset_0_0_4px_0_rgba(255,255,255,0.24)] hover:brightness-105 active:scale-[0.98] transition-[filter,transform]"
+                  >
+                    <Check size={13} strokeWidth={2.5} />
+                    Accept
+                  </button>
+                </>
+              ) : (
+                <>
+                  <div className="flex-1 flex flex-wrap items-center gap-2">
+                    {chips.map((label) => (
+                      <button
+                        key={label}
+                        type="button"
+                        onClick={() => setInput(label + ' this text.')}
+                        className="inline-flex items-center px-3 py-1.5 rounded-full bg-black/[0.03] hover:bg-black/[0.06] text-[12px] font-medium text-[#171717] leading-5 tracking-tight transition-colors"
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => send()}
+                    disabled={!canSend}
+                    className={`inline-flex items-center min-h-[32px] px-3 rounded-[8px] bg-[#0787FF] text-white text-[14px] font-medium leading-5 tracking-tight shadow-[inset_0_0_4px_0_rgba(255,255,255,0.24)] transition-[opacity,filter,transform] ${
+                      canSend ? 'hover:brightness-105 active:scale-[0.98]' : 'opacity-50 cursor-not-allowed'
+                    }`}
+                  >
+                    Send to AI
+                  </button>
+                </>
+              )}
+            </div>
           </div>
         </div>
       </div>
-    </div>
+    </>
   )
+}
+
+function fakeAI(prompt: string, source: string, variant = false): string {
+  const base = source.trim()
+  const p = prompt.toLowerCase()
+  const seed = base || 'Class 12 results were published today, with 64.13% of examinees passing.'
+
+  if (p.includes('fix grammar')) {
+    const lead = variant
+      ? 'Here is the same passage with tightened punctuation and clause structure:'
+      : 'Here is a grammar-polished version of your card:'
+    return `${lead}\n\n${polish(seed)}`
+  }
+  if (p.includes('formal')) {
+    const lead = variant
+      ? 'A more elevated, broadsheet register — same meaning, weightier tone:'
+      : 'Here is a more formal rendering of your card:'
+    return `${lead}\n\n${formalize(seed)}`
+  }
+  if (p.includes('shorter') || p.includes('shorten')) {
+    const lead = variant
+      ? 'A tighter cut — redundant qualifiers removed:'
+      : 'Here is a shorter version, same lede:'
+    return `${lead}\n\n${shorten(seed)}`
+  }
+  if (p.includes('translate')) {
+    return 'Translated into Nepali:\n\nकक्षा १२ को नतिजा सार्वजनिक भएको छ। ६४.१३ प्रतिशत परीक्षार्थी उत्तीर्ण भएका छन्।'
+  }
+  if (p.includes('politic')) {
+    const lead = variant
+      ? 'A version sharpened with a stronger political frame:'
+      : 'Here is a rewrite with a more politically charged tone:'
+    const body = `${seed} The announcement lands amid renewed scrutiny over how the ministry has staged and timed public disclosures this quarter${variant ? ', with opposition benches signalling a formal parliamentary review' : ''}.`
+    return `${lead}\n\n${body}`
+  }
+  const lead = variant
+    ? 'A crisper, tighter framing on the same lede:'
+    : 'Here is a rewrite based on your prompt:'
+  return `${lead}\n\n${polish(seed)}`
+}
+
+function polish(s: string) {
+  if (!s) return 'Berry generated a polished draft based on your prompt.'
+  return s.replace(/\s+/g, ' ').replace(/\s+([,.;:])/g, '$1').trim()
+}
+function formalize(s: string) {
+  if (!s) return 'A more formal register has been applied to your draft.'
+  return s.replace(/\bdon't\b/gi, 'do not').replace(/\bcan't\b/gi, 'cannot').replace(/\bit's\b/gi, 'it is')
+}
+function shorten(s: string) {
+  if (!s) return 'Concise version drafted by Berry.'
+  const first = s.split(/(?<=\.)\s+/)[0] ?? s
+  return first.length < s.length ? first : s.slice(0, Math.max(80, Math.floor(s.length * 0.6))).trim() + '…'
 }
 
 function CategoryPicker({
@@ -1574,6 +1846,12 @@ function V11Styles() {
       }
       .v11-tool-in { animation: v11-tool-in 140ms ease-out both; }
 
+      @keyframes v11-diff-in {
+        from { opacity: 0; transform: translateY(-1px); }
+        to   { opacity: 1; transform: translateY(0); }
+      }
+      .v11-diff-in { animation: v11-diff-in 220ms cubic-bezier(0.22,1,0.36,1) both; }
+
       @keyframes v11-overlay-in {
         from { opacity: 0; }
         to   { opacity: 1; }
@@ -1585,6 +1863,18 @@ function V11Styles() {
         to   { transform: translateX(0);    opacity: 1; }
       }
       .v11-slide-in { animation: v11-slide-in 260ms cubic-bezier(0.22,1,0.36,1) both; }
+
+      @keyframes v11-berry-dot {
+        0%, 60%, 100% { transform: translateY(0); opacity: 0.35; }
+        30%           { transform: translateY(-4px); opacity: 1; }
+      }
+      .v11-berry-dot {
+        display: inline-block;
+        width: 6px; height: 6px;
+        border-radius: 9999px;
+        background: #0787FF;
+        animation: v11-berry-dot 900ms ease-in-out infinite;
+      }
     `}</style>
   )
 }

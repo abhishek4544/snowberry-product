@@ -1,0 +1,7 @@
+import SettingsShell from '@/components/settings/SettingsShell'
+
+export const metadata = { title: 'Settings — Snowberry Newsroom' }
+
+export default function SettingsLayout({ children }: { children: React.ReactNode }) {
+  return <SettingsShell>{children}</SettingsShell>
+}

@@ -1,0 +1,10 @@
+<svg preserveAspectRatio="none" width="100%" height="100%" overflow="visible" style="display: block;" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="globus, map, earth, globe" clip-path="url(#clip0_0_258)">
+<path id="vector" d="M7 12.5417C10.0606 12.5417 12.5417 10.0606 12.5417 7C12.5417 3.93942 10.0606 1.45833 7 1.45833M7 12.5417C3.93942 12.5417 1.45833 10.0606 1.45833 7C1.45833 3.93942 3.93942 1.45833 7 1.45833M7 12.5417C5.71134 12.5417 4.66667 10.0606 4.66667 7C4.66667 3.93942 5.71134 1.45833 7 1.45833M7 12.5417C8.28866 12.5417 9.33333 10.0606 9.33333 7C9.33333 3.93942 8.28866 1.45833 7 1.45833M12.25 7H1.75" stroke="var(--stroke-0, #020617)" stroke-linecap="square"/>
+</g>
+<defs>
+<clipPath id="clip0_0_258">
+<rect width="14" height="14" fill="white"/>
+</clipPath>
+</defs>
+</svg>
