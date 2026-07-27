@@ -1,39 +1,19 @@
 'use client'
 
-/**
- * SeoSettings — /settings/seo
- *
- * Design principles applied here:
- *  • Every setting lives in a ControlCard with the same anatomy:
- *      header (title + description)  →  body (controls)  →  preview footer (result).
- *  • Sections are numbered (01–04) so the eye has anchors on a long page.
- *  • Field / Toggle / Select primitives are shared — no nested or ad-hoc form
- *    patterns.
- *  • The page header is sticky so Save is always reachable.
- *  • Previews always show the *actual* output that will ship (meta tag,
- *    canonical URL, JSON-LD, share card) — recognition over recall.
- *
- * Sections:
- *  01 Basics            — Meta title template · Meta description · Canonical · Robots
- *  02 Social sharing    — Open Graph · Twitter Card
- *  03 Structured data   — Schema.org (JSON-LD)
- *  04 Feeds & sitemaps  — News · Image · RSS
- */
-
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ComponentType, type InputHTMLAttributes, type ReactNode, type TextareaHTMLAttributes } from 'react'
 import {
-  Compass, Share2, Braces, Rss, Eye, Copy, RefreshCw, Send,
-  Check, ChevronDown, ImageIcon, Upload, Info, ArrowUpRight,
-  Globe, Sparkles,
+  ArrowUpRight, Braces, Check, ChevronDown, Compass, Copy, Eye, Globe,
+  ImageIcon, Info, RefreshCw, Rss, Send, Share2, Sparkles, Upload,
 } from 'lucide-react'
 
-/* ─── Component ──────────────────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════════
+   Root
+   ══════════════════════════════════════════════════════════════════════ */
 
 export default function SeoSettings() {
   return (
     <div className="flex flex-col">
       <PageHeader />
-
       <div className="mt-10 flex flex-col gap-14">
         <BasicsSection />
         <SocialSection />
@@ -43,8 +23,6 @@ export default function SeoSettings() {
     </div>
   )
 }
-
-/* ─── Page header (sticky) ───────────────────────────────────────────── */
 
 function PageHeader() {
   return (
@@ -59,11 +37,11 @@ function PageHeader() {
         </p>
       </div>
       <div className="flex items-center gap-2">
-        <button className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-[12.5px] font-medium text-slate-700 hover:border-slate-300 transition-colors">
+        <button className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-[12.5px] font-medium text-slate-700 transition-colors hover:border-slate-300">
           <Eye className="size-3.5 text-slate-400" />
           Preview snippet
         </button>
-        <button className="inline-flex items-center gap-1.5 rounded-lg bg-brand-500 px-3.5 py-2 text-[12.5px] font-medium text-white hover:bg-brand-600 transition-colors shadow-sm">
+        <button className="inline-flex items-center gap-1.5 rounded-lg bg-brand-500 px-3.5 py-2 text-[12.5px] font-medium text-white shadow-sm transition-colors hover:bg-brand-600">
           <Check className="size-3.5" />
           Save changes
         </button>
@@ -72,190 +50,9 @@ function PageHeader() {
   )
 }
 
-/* ─── Section — numbered header + slot for cards ─────────────────────── */
-
-function Section({
-  id, number, title, description, icon: Icon, children,
-}: {
-  id: string
-  number: string
-  title: string
-  description: string
-  icon: React.ComponentType<{ className?: string }>
-  children: React.ReactNode
-}) {
-  return (
-    <section id={id} className="flex flex-col">
-      <header className="flex items-start gap-4">
-        <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-brand-50 text-brand-500 ring-1 ring-brand-100">
-          <Icon className="size-[18px]" />
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-baseline gap-2">
-            <span className="font-mono text-[11px] font-semibold text-slate-400 tabular-nums">{number}</span>
-            <h2 className="font-display text-[18px] font-semibold text-slate-950">{title}</h2>
-          </div>
-          <p className="mt-1 max-w-2xl text-[12.5px] leading-relaxed text-slate-500">{description}</p>
-        </div>
-      </header>
-
-      <div className="mt-5 flex flex-col gap-3">
-        {children}
-      </div>
-    </section>
-  )
-}
-
-/* ─── ControlCard — the single, consistent surface for every setting ─── */
-
-function ControlCard({
-  title, description, status, children, preview,
-}: {
-  title: string
-  description?: string
-  status?: { label: string; tone?: 'ok' | 'warn' | 'muted' }
-  children: React.ReactNode
-  preview?: { label: string; content: React.ReactNode }
-}) {
-  const toneCls =
-    status?.tone === 'warn'   ? 'bg-amber-50 text-amber-700' :
-    status?.tone === 'muted'  ? 'bg-slate-100 text-slate-600' :
-                                'bg-emerald-50 text-emerald-700'
-  return (
-    <article className="overflow-hidden rounded-xl bg-white ring-1 ring-slate-200/70 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
-      <header className="flex flex-wrap items-start justify-between gap-3 px-5 py-4">
-        <div className="min-w-0">
-          <h3 className="text-[13.5px] font-semibold text-slate-900">{title}</h3>
-          {description && <p className="mt-1 max-w-2xl text-[12px] leading-relaxed text-slate-500">{description}</p>}
-        </div>
-        {status && (
-          <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${toneCls}`}>
-            <span className="size-1.5 rounded-full bg-current opacity-70" />
-            {status.label}
-          </span>
-        )}
-      </header>
-
-      <div className="border-t border-slate-100 px-5 py-4">
-        {children}
-      </div>
-
-      {preview && (
-        <div className="border-t border-slate-100 bg-slate-50/60 px-5 py-3">
-          <p className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-slate-500">{preview.label}</p>
-          <div className="mt-2">{preview.content}</div>
-        </div>
-      )}
-    </article>
-  )
-}
-
-/* ─── Field / Input primitives ───────────────────────────────────────── */
-
-function Field({
-  label, hint, htmlFor, children,
-}: {
-  label: string
-  hint?: string
-  htmlFor?: string
-  children: React.ReactNode
-}) {
-  return (
-    <div className="flex flex-col gap-1.5">
-      <label htmlFor={htmlFor} className="flex items-baseline justify-between gap-2">
-        <span className="text-[12px] font-medium text-slate-700">{label}</span>
-        {hint && <span className="text-[11px] tabular-nums text-slate-400">{hint}</span>}
-      </label>
-      {children}
-    </div>
-  )
-}
-
-function TextInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
-  const { className = '', ...rest } = props
-  return (
-    <input
-      {...rest}
-      className={`w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-[13px] text-slate-900 placeholder:text-slate-400 outline-none transition-colors focus:border-brand-400 focus:ring-2 focus:ring-brand-100 ${className}`}
-    />
-  )
-}
-
-function TextArea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
-  const { className = '', ...rest } = props
-  return (
-    <textarea
-      {...rest}
-      className={`w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-[13px] leading-relaxed text-slate-900 placeholder:text-slate-400 outline-none transition-colors focus:border-brand-400 focus:ring-2 focus:ring-brand-100 ${className}`}
-    />
-  )
-}
-
-function Select({ value, onChange, children }: { value: string; onChange: (v: string) => void; children: React.ReactNode }) {
-  return (
-    <div className="relative">
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="w-full appearance-none rounded-lg border border-slate-200 bg-white px-3 py-2.5 pr-9 text-[13px] text-slate-900 outline-none transition-colors focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
-      >
-        {children}
-      </select>
-      <ChevronDown className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
-    </div>
-  )
-}
-
-function Toggle({ on, onChange, label }: { on: boolean; onChange: (v: boolean) => void; label?: string }) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={on}
-      aria-label={label}
-      onClick={() => onChange(!on)}
-      className={[
-        'relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors',
-        on ? 'bg-brand-500' : 'bg-slate-300',
-      ].join(' ')}
-    >
-      <span
-        className={[
-          'inline-block size-4 rounded-full bg-white shadow-sm transition-transform',
-          on ? 'translate-x-[18px]' : 'translate-x-[2px]',
-        ].join(' ')}
-      />
-    </button>
-  )
-}
-
-function CheckToggle({ label, on, onChange }: { label: string; on: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <label className="flex cursor-pointer items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 hover:border-slate-300 transition-colors">
-      <span className="text-[12.5px] font-medium text-slate-800">{label}</span>
-      <Toggle on={on} onChange={onChange} label={label} />
-    </label>
-  )
-}
-
-function TokenChip({ children }: { children: React.ReactNode }) {
-  return (
-    <code className="inline-flex items-center rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[10.5px] font-medium text-slate-700">
-      {children}
-    </code>
-  )
-}
-
-function InfoNote({ children }: { children: React.ReactNode }) {
-  return (
-    <p className="mt-1.5 inline-flex items-center gap-1.5 text-[11px] text-slate-500">
-      <Info className="size-3 text-slate-400" />
-      {children}
-    </p>
-  )
-}
-
-/* ─── Section 01 — Basics ────────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════════
+   01 · Basics
+   ══════════════════════════════════════════════════════════════════════ */
 
 function BasicsSection() {
   const [titleTemplate, setTitleTemplate] = useState('{title} — {section} | {site_name}')
@@ -346,35 +143,26 @@ function BasicsSection() {
         }}
       >
         <div className="flex flex-col gap-2">
-          <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 bg-white px-3.5 py-3 hover:border-slate-300 transition-colors">
-            <input
-              type="radio" name="canonical" checked={canonicalMode === 'auto'}
-              onChange={() => setCanonicalMode('auto')}
-              className="mt-0.5 size-3.5 accent-brand-500"
-            />
-            <span className="flex-1">
-              <span className="text-[13px] font-medium text-slate-900">Automatic</span>
-              <span className="ml-2 text-[11.5px] text-slate-500">Use the article's live URL — recommended for most publishers.</span>
-            </span>
-          </label>
-          <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 bg-white px-3.5 py-3 hover:border-slate-300 transition-colors">
-            <input
-              type="radio" name="canonical" checked={canonicalMode === 'custom'}
-              onChange={() => setCanonicalMode('custom')}
-              className="mt-0.5 size-3.5 accent-brand-500"
-            />
-            <span className="flex-1 min-w-0">
-              <span className="text-[13px] font-medium text-slate-900">Custom pattern</span>
-              <span className="ml-2 text-[11.5px] text-slate-500">Use when syndicating from another domain.</span>
-              {canonicalMode === 'custom' && (
-                <TextInput
-                  value={customCanonical}
-                  onChange={(e) => setCustomCanonical(e.target.value)}
-                  className="mt-2.5 font-mono text-[12px]"
-                />
-              )}
-            </span>
-          </label>
+          <RadioRow
+            name="canonical" checked={canonicalMode === 'auto'}
+            onChange={() => setCanonicalMode('auto')}
+            title="Automatic"
+            hint="Use the article's live URL — recommended for most publishers."
+          />
+          <RadioRow
+            name="canonical" checked={canonicalMode === 'custom'}
+            onChange={() => setCanonicalMode('custom')}
+            title="Custom pattern"
+            hint="Use when syndicating from another domain."
+          >
+            {canonicalMode === 'custom' && (
+              <TextInput
+                value={customCanonical}
+                onChange={(e) => setCustomCanonical(e.target.value)}
+                className="mt-2.5 font-mono text-[12px]"
+              />
+            )}
+          </RadioRow>
         </div>
       </ControlCard>
 
@@ -393,10 +181,10 @@ function BasicsSection() {
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <div className="flex flex-col gap-2">
             <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-slate-500">Crawler directives</p>
-            <CheckToggle label="Indexable"      on={robots.index}   onChange={(v) => setRobots({ ...robots, index: v })} />
-            <CheckToggle label="Follow links"   on={robots.follow}  onChange={(v) => setRobots({ ...robots, follow: v })} />
-            <CheckToggle label="Allow archive"  on={robots.archive} onChange={(v) => setRobots({ ...robots, archive: v })} />
-            <CheckToggle label="Allow snippet"  on={robots.snippet} onChange={(v) => setRobots({ ...robots, snippet: v })} />
+            <CheckToggle label="Indexable"     on={robots.index}   onChange={(v) => setRobots({ ...robots, index: v })} />
+            <CheckToggle label="Follow links"  on={robots.follow}  onChange={(v) => setRobots({ ...robots, follow: v })} />
+            <CheckToggle label="Allow archive" on={robots.archive} onChange={(v) => setRobots({ ...robots, archive: v })} />
+            <CheckToggle label="Allow snippet" on={robots.snippet} onChange={(v) => setRobots({ ...robots, snippet: v })} />
           </div>
           <div className="flex flex-col gap-3">
             <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-slate-500">Preview limits</p>
@@ -422,7 +210,34 @@ function BasicsSection() {
   )
 }
 
-/* ─── Section 02 — Social sharing ────────────────────────────────────── */
+function RadioRow({
+  name, checked, onChange, title, hint, children,
+}: {
+  name: string
+  checked: boolean
+  onChange: () => void
+  title: string
+  hint: string
+  children?: ReactNode
+}) {
+  return (
+    <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 bg-white px-3.5 py-3 transition-colors hover:border-slate-300">
+      <input
+        type="radio" name={name} checked={checked} onChange={onChange}
+        className="mt-0.5 size-3.5 accent-brand-500"
+      />
+      <span className="min-w-0 flex-1">
+        <span className="text-[13px] font-medium text-slate-900">{title}</span>
+        <span className="ml-2 text-[11.5px] text-slate-500">{hint}</span>
+        {children}
+      </span>
+    </label>
+  )
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   02 · Social sharing
+   ══════════════════════════════════════════════════════════════════════ */
 
 function SocialSection() {
   const [ogTitle, setOgTitle] = useState("Ukaalo — Nepal's trusted news source")
@@ -455,7 +270,6 @@ function SocialSection() {
               <TextArea rows={2} value={ogDescription} onChange={(e) => setOgDescription(e.target.value)} />
             </Field>
           </div>
-
           <OgPreview title={ogTitle} description={ogDescription} />
         </div>
       </ControlCard>
@@ -493,31 +307,10 @@ function SocialSection() {
             </div>
             <InfoNote>Falls back to the article author's handle when set on their profile.</InfoNote>
           </div>
-
           <TwitterPreview title={ogTitle} description={ogDescription} site={twitterSite} />
         </div>
       </ControlCard>
     </Section>
-  )
-}
-
-function UploadBox({ name, size }: { name: string; size: string }) {
-  return (
-    <div className="flex items-center justify-between gap-3 rounded-lg border border-dashed border-slate-300 bg-slate-50/70 px-3.5 py-3">
-      <div className="flex items-center gap-3">
-        <div className="grid size-12 shrink-0 place-items-center rounded-md bg-white ring-1 ring-slate-200">
-          <ImageIcon className="size-5 text-slate-400" />
-        </div>
-        <div>
-          <p className="text-[12.5px] font-medium text-slate-800">{name}</p>
-          <p className="text-[11px] text-slate-500">{size}</p>
-        </div>
-      </div>
-      <button className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-[11.5px] font-medium text-slate-700 hover:border-slate-300 transition-colors">
-        <Upload className="size-3.5" />
-        Replace
-      </button>
-    </div>
   )
 }
 
@@ -554,13 +347,35 @@ function TwitterPreview({ title, description, site }: { title: string; descripti
   )
 }
 
-/* ─── Section 03 — Structured data (Schema.org) ──────────────────────── */
+function UploadBox({ name, size }: { name: string; size: string }) {
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-lg border border-dashed border-slate-300 bg-slate-50/70 px-3.5 py-3">
+      <div className="flex items-center gap-3">
+        <div className="grid size-12 shrink-0 place-items-center rounded-md bg-white ring-1 ring-slate-200">
+          <ImageIcon className="size-5 text-slate-400" />
+        </div>
+        <div>
+          <p className="text-[12.5px] font-medium text-slate-800">{name}</p>
+          <p className="text-[11px] text-slate-500">{size}</p>
+        </div>
+      </div>
+      <button className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-[11.5px] font-medium text-slate-700 transition-colors hover:border-slate-300">
+        <Upload className="size-3.5" />
+        Replace
+      </button>
+    </div>
+  )
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   03 · Structured data
+   ══════════════════════════════════════════════════════════════════════ */
 
 function StructuredDataSection() {
   const [publisherType, setPublisherType] = useState('NewsMediaOrganization')
-  const [articleType, setArticleType] = useState('NewsArticle')
-  const [autoGenerate, setAutoGenerate] = useState(true)
-  const [publisher, setPublisher] = useState('Ukaalo News')
+  const [articleType, setArticleType]     = useState('NewsArticle')
+  const [publisher, setPublisher]         = useState('Ukaalo News')
+  const [autoGenerate, setAutoGenerate]   = useState(true)
 
   const jsonLd = `{
   "@context": "https://schema.org",
@@ -596,14 +411,14 @@ function StructuredDataSection() {
                 <code>{jsonLd}</code>
               </pre>
               <div className="mt-2 flex items-center justify-end gap-1.5">
-                <button className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 hover:border-slate-300 transition-colors">
+                <button className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 transition-colors hover:border-slate-300">
                   <Copy className="size-3" />
                   Copy
                 </button>
                 <a
                   href="https://validator.schema.org"
                   target="_blank" rel="noreferrer"
-                  className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 hover:border-slate-300 transition-colors"
+                  className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 transition-colors hover:border-slate-300"
                 >
                   Validate <ArrowUpRight className="size-3" />
                 </a>
@@ -652,12 +467,14 @@ function StructuredDataSection() {
   )
 }
 
-/* ─── Section 04 — Feeds & sitemaps ──────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════════
+   04 · Feeds & sitemaps
+   ══════════════════════════════════════════════════════════════════════ */
 
 function FeedsSection() {
-  const [news, setNews]     = useState(true)
-  const [images, setImages] = useState(true)
-  const [rss, setRss]       = useState(true)
+  const [news, setNews]         = useState(true)
+  const [images, setImages]     = useState(true)
+  const [rss, setRss]           = useState(true)
   const [rssCount, setRssCount] = useState('25')
   const [rssFull, setRssFull]   = useState(false)
 
@@ -675,7 +492,6 @@ function FeedsSection() {
         on={news} onToggle={setNews}
         submitToGoogle
       />
-
       <FeedCard
         title="Image sitemap"
         badge="Google Images"
@@ -685,7 +501,6 @@ function FeedsSection() {
         on={images} onToggle={setImages}
         submitToGoogle
       />
-
       <FeedCard
         title="RSS feed"
         badge="Public"
@@ -731,13 +546,15 @@ function FeedCard({
   on: boolean
   onToggle: (v: boolean) => void
   submitToGoogle?: boolean
-  children?: React.ReactNode
+  children?: ReactNode
 }) {
   return (
-    <article className={[
-      'overflow-hidden rounded-xl bg-white ring-1 shadow-[0_1px_2px_rgba(15,23,42,0.03)] transition-colors',
-      on ? 'ring-slate-200/70' : 'ring-slate-200/50 opacity-70',
-    ].join(' ')}>
+    <article
+      className={[
+        'overflow-hidden rounded-xl bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03)] ring-1 transition-colors',
+        on ? 'ring-slate-200/70' : 'opacity-70 ring-slate-200/50',
+      ].join(' ')}
+    >
       <header className="flex flex-wrap items-start justify-between gap-3 px-5 py-4">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
@@ -752,28 +569,26 @@ function FeedCard({
       </header>
 
       <div className="flex flex-col gap-3 border-t border-slate-100 px-5 py-4">
-        {/* URL row */}
         <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2">
           <Globe className="size-3.5 shrink-0 text-slate-400" />
           <code className="min-w-0 flex-1 truncate font-mono text-[11.5px] text-slate-700">{url}</code>
-          <button className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 hover:border-slate-300 transition-colors">
+          <button className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 transition-colors hover:border-slate-300">
             <Copy className="size-3" />
             Copy
           </button>
         </div>
 
-        {/* Meta row */}
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="text-[11.5px] text-slate-500">
             Last generated <span className="font-semibold text-slate-700">{lastGenerated}</span>
           </p>
           <div className="flex items-center gap-1.5">
-            <button className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-[11.5px] font-medium text-slate-700 hover:border-slate-300 transition-colors">
+            <button className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-[11.5px] font-medium text-slate-700 transition-colors hover:border-slate-300">
               <RefreshCw className="size-3" />
               Regenerate
             </button>
             {submitToGoogle && (
-              <button className="inline-flex items-center gap-1 rounded-md bg-brand-500 px-2.5 py-1.5 text-[11.5px] font-medium text-white hover:bg-brand-600 transition-colors">
+              <button className="inline-flex items-center gap-1 rounded-md bg-brand-500 px-2.5 py-1.5 text-[11.5px] font-medium text-white transition-colors hover:bg-brand-600">
                 <Send className="size-3" />
                 Submit to Google
               </button>
@@ -784,5 +599,178 @@ function FeedCard({
         {children && <div className="border-t border-slate-100 pt-3">{children}</div>}
       </div>
     </article>
+  )
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   Primitives — Section, ControlCard
+   ══════════════════════════════════════════════════════════════════════ */
+
+function Section({
+  id, number, title, description, icon: Icon, children,
+}: {
+  id: string
+  number: string
+  title: string
+  description: string
+  icon: ComponentType<{ className?: string }>
+  children: ReactNode
+}) {
+  return (
+    <section id={id} className="flex flex-col">
+      <header className="flex items-start gap-4">
+        <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-brand-50 text-brand-500 ring-1 ring-brand-100">
+          <Icon className="size-[18px]" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-baseline gap-2">
+            <span className="font-mono text-[11px] font-semibold tabular-nums text-slate-400">{number}</span>
+            <h2 className="font-display text-[18px] font-semibold text-slate-950">{title}</h2>
+          </div>
+          <p className="mt-1 max-w-2xl text-[12.5px] leading-relaxed text-slate-500">{description}</p>
+        </div>
+      </header>
+      <div className="mt-5 flex flex-col gap-3">{children}</div>
+    </section>
+  )
+}
+
+type StatusTone = 'ok' | 'warn' | 'muted'
+
+function ControlCard({
+  title, description, status, children, preview,
+}: {
+  title: string
+  description?: string
+  status?: { label: string; tone?: StatusTone }
+  children: ReactNode
+  preview?: { label: string; content: ReactNode }
+}) {
+  const toneCls =
+    status?.tone === 'warn'  ? 'bg-amber-50 text-amber-700'  :
+    status?.tone === 'muted' ? 'bg-slate-100 text-slate-600' :
+                               'bg-emerald-50 text-emerald-700'
+  return (
+    <article className="overflow-hidden rounded-xl bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03)] ring-1 ring-slate-200/70">
+      <header className="flex flex-wrap items-start justify-between gap-3 px-5 py-4">
+        <div className="min-w-0">
+          <h3 className="text-[13.5px] font-semibold text-slate-900">{title}</h3>
+          {description && <p className="mt-1 max-w-2xl text-[12px] leading-relaxed text-slate-500">{description}</p>}
+        </div>
+        {status && (
+          <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${toneCls}`}>
+            <span className="size-1.5 rounded-full bg-current opacity-70" />
+            {status.label}
+          </span>
+        )}
+      </header>
+
+      <div className="border-t border-slate-100 px-5 py-4">{children}</div>
+
+      {preview && (
+        <div className="border-t border-slate-100 bg-slate-50/60 px-5 py-3">
+          <p className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-slate-500">{preview.label}</p>
+          <div className="mt-2">{preview.content}</div>
+        </div>
+      )}
+    </article>
+  )
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   Primitives — form controls
+   ══════════════════════════════════════════════════════════════════════ */
+
+function Field({
+  label, hint, htmlFor, children,
+}: {
+  label: string
+  hint?: string
+  htmlFor?: string
+  children: ReactNode
+}) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <label htmlFor={htmlFor} className="flex items-baseline justify-between gap-2">
+        <span className="text-[12px] font-medium text-slate-700">{label}</span>
+        {hint && <span className="text-[11px] tabular-nums text-slate-400">{hint}</span>}
+      </label>
+      {children}
+    </div>
+  )
+}
+
+const inputCls =
+  'w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-[13px] text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-brand-400 focus:ring-2 focus:ring-brand-100'
+
+function TextInput({ className = '', ...rest }: InputHTMLAttributes<HTMLInputElement>) {
+  return <input {...rest} className={`${inputCls} ${className}`} />
+}
+
+function TextArea({ className = '', ...rest }: TextareaHTMLAttributes<HTMLTextAreaElement>) {
+  return <textarea {...rest} className={`${inputCls} resize-none leading-relaxed ${className}`} />
+}
+
+function Select({ value, onChange, children }: { value: string; onChange: (v: string) => void; children: ReactNode }) {
+  return (
+    <div className="relative">
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className={`${inputCls} appearance-none pr-9`}
+      >
+        {children}
+      </select>
+      <ChevronDown className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
+    </div>
+  )
+}
+
+function Toggle({ on, onChange, label }: { on: boolean; onChange: (v: boolean) => void; label?: string }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      aria-label={label}
+      onClick={() => onChange(!on)}
+      className={[
+        'relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors',
+        on ? 'bg-brand-500' : 'bg-slate-300',
+      ].join(' ')}
+    >
+      <span
+        className={[
+          'inline-block size-4 rounded-full bg-white shadow-sm transition-transform',
+          on ? 'translate-x-[18px]' : 'translate-x-[2px]',
+        ].join(' ')}
+      />
+    </button>
+  )
+}
+
+function CheckToggle({ label, on, onChange }: { label: string; on: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <label className="flex cursor-pointer items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 transition-colors hover:border-slate-300">
+      <span className="text-[12.5px] font-medium text-slate-800">{label}</span>
+      <Toggle on={on} onChange={onChange} label={label} />
+    </label>
+  )
+}
+
+function TokenChip({ children }: { children: ReactNode }) {
+  return (
+    <code className="inline-flex items-center rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[10.5px] font-medium text-slate-700">
+      {children}
+    </code>
+  )
+}
+
+function InfoNote({ children }: { children: ReactNode }) {
+  return (
+    <p className="mt-1.5 inline-flex items-center gap-1.5 text-[11px] text-slate-500">
+      <Info className="size-3 text-slate-400" />
+      {children}
+    </p>
   )
 }
